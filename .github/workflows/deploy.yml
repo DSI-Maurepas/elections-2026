@@ -33,6 +33,9 @@ jobs:
 
       - name: 🛠️ Build application
         run: npm run build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          VITE_SPREADSHEET_ID: ${{ secrets.VITE_SPREADSHEET_ID }}
 
       - name: 📤 Upload build artifact
         uses: actions/upload-pages-artifact@v3
