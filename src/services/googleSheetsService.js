@@ -58,11 +58,31 @@ class GoogleSheetsService {
    * - échappe les quotes simples selon la règle Google Sheets ('' )
    */
   a1(sheetName, range = 'A:Z') {
-    const safe = String(sheetName || '').replace(/'/g, "''");
+    const safe = String(this.normalizeSheetName(sheetName) || '').replace(/'/g, "''");
     return `'${safe}'!${range}`;
   }
 
-  async sleep(ms) {
+  
+  /**
+   * Normalise les noms d'onglets pour éviter les régressions (accents/variantes).
+   * Ex: "Résultats_T1" -> "Resultats_T1"
+   */
+  normalizeSheetName(sheetName) {
+    const raw = String(sheetName || '').trim();
+    if (!raw) return raw;
+
+    // 1) Normalisation unicode (suppression des accents)
+    const noAccents = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // 2) Corrections ciblées (au cas où)
+    const mapped = noAccents
+      .replace(/^Resultats_/i, 'Resultats_')
+      .replace(/^Participation_/i, 'Participation_');
+
+    return mapped;
+  }
+
+async sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
@@ -236,9 +256,10 @@ class GoogleSheetsService {
   }
 
   async getData(sheetName, filters = {}) {
+    const normalizedSheet = this.normalizeSheetName(sheetName);
     const range = filters?.range || 'A:Z';
-    const a1 = this.a1(sheetName, range);
-    const key = `getData:${a1}`;
+    const a1 = this.a1(normalizedSheet, range);
+    const key = `getData:${normalizedSheet}:${a1}`;
     const cached = this._getCached(key);
     if (cached) return cached;
 
@@ -248,7 +269,7 @@ class GoogleSheetsService {
       if (rows.length > 0) rows.shift(); // remove header
       
       // Transformer les lignes en objets selon le sheetName
-      const transformed = this._transformRows(sheetName, rows);
+      const transformed = this._transformRows(normalizedSheet, rows);
       
       // IMPORTANT : Ajouter rowIndex à chaque objet pour permettre update/delete
       const withRowIndex = transformed.map((obj, index) => ({
@@ -267,10 +288,11 @@ class GoogleSheetsService {
   }
 
   async updateRow(sheetName, rowIndex, rowData) {
+    const normalizedSheet = this.normalizeSheetName(sheetName);
     const row = Array.isArray(rowData) ? rowData : Object.values(rowData || {});
     const sheetRow = Number(rowIndex) + 2;
     const lastCol = this.colIndexToA1(Math.max(0, row.length - 1));
-    const a1 = this.a1(sheetName, `A${sheetRow}:${lastCol}${sheetRow}`);
+    const a1 = this.a1(normalizedSheet, `A${sheetRow}:${lastCol}${sheetRow}`);
 
     // cache invalidation simple
     this._cache.clear();
@@ -282,8 +304,9 @@ class GoogleSheetsService {
   }
 
   async deleteRow(sheetName, rowIndex) {
+    const normalizedSheet = this.normalizeSheetName(sheetName);
     const sheetRow = Number(rowIndex) + 2;
-    const a1 = this.a1(sheetName, `A${sheetRow}:Z${sheetRow}`);
+    const a1 = this.a1(normalizedSheet, `A${sheetRow}:Z${sheetRow}`);
 
     this._cache.clear();
 
@@ -301,7 +324,7 @@ class GoogleSheetsService {
       });
     }
 
-    const sheetName = arg1;
+    const sheetName = this.normalizeSheetName(arg1);
     const rows = Array.isArray(arg2) ? arg2 : [];
     const updates = rows.map((r) => {
       const rowIndex = r.rowIndex ?? r.index ?? 0;
@@ -385,10 +408,58 @@ class GoogleSheetsService {
     });
   }
 
-  // ==================== UTILITAIRES ====================
+  
+  // ==================== AUDIT / ERREURS ====================
+
+  /**
+   * Journalise une action métier dans la feuille AUDIT_LOG.
+   * Colonnes attendues (ordre):
+   * timestamp | action | entity | entityId | beforeJson | afterJson | userEmail (optionnel)
+   */
+  async logAudit(action, entity, entityId, before = {}, after = {}) {
+    const ts = new Date().toISOString();
+    const beforeJson = JSON.stringify(before ?? {});
+    const afterJson = JSON.stringify(after ?? {});
+    const userEmail = (authService.getUserEmail?.() || authService.getUser?.()?.email || '') || '';
+
+    return await this.appendRows(SHEET_NAMES.AUDIT_LOG, [[
+      ts,
+      action || '',
+      entity || '',
+      entityId || '',
+      beforeJson,
+      afterJson,
+      userEmail
+    ]]);
+  }
+
+  /**
+   * Journalise une erreur technique/fonctionnelle dans la feuille ERROR_LOG.
+   * Colonnes attendues (ordre):
+   * timestamp | severity | source | message | stack | contextJson | userEmail (optionnel)
+   */
+  async logError(severity, source, message, stack = '', context = {}) {
+    const ts = new Date().toISOString();
+    const contextJson = JSON.stringify(context ?? {});
+    const userEmail = (authService.getUserEmail?.() || authService.getUser?.()?.email || '') || '';
+
+    return await this.appendRows(SHEET_NAMES.ERROR_LOG, [[
+      ts,
+      severity || 'ERROR',
+      source || '',
+      message || '',
+      stack || '',
+      contextJson,
+      userEmail
+    ]]);
+  }
+
+
+// ==================== UTILITAIRES ====================
 
   async appendRows(sheetName, rows) {
-    const a1 = this.a1(sheetName, 'A:Z');
+    const normalizedSheet = this.normalizeSheetName(sheetName);
+    const a1 = this.a1(normalizedSheet, 'A:Z');
     this._cache.clear();
 
     // ici on garde /values/{range}:append (fonctionne bien car range simple A:Z, même si onglet accentué)
@@ -399,7 +470,8 @@ class GoogleSheetsService {
   }
 
   async clearSheet(sheetName) {
-    const a1 = this.a1(sheetName, 'A:Z');
+    const normalizedSheet = this.normalizeSheetName(sheetName);
+    const a1 = this.a1(normalizedSheet, 'A:Z');
     this._cache.clear();
     return await this.makeRequest(`/values/${encodeURIComponent(a1)}:clear`, { method: 'POST' });
   }
