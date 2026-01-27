@@ -10,7 +10,7 @@ const ResultatsValidation = ({ onValidate }) => {
   const { state: electionState } = useElectionState();
   const { data: bureaux } = useGoogleSheets('Bureaux');
   const { data: resultats, load: loadResultats } = useGoogleSheets(
-    electionState.tourActuel === 1 ? 'Résultats_T1' : 'Résultats_T2'
+    electionState.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2'
   );
 
   const [validation, setValidation] = useState({

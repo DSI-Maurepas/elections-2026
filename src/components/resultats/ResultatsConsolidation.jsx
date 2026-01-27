@@ -13,7 +13,7 @@ const ResultatsConsolidation = () => {
   const { 
     data: resultats, 
     load: loadResultats 
-  } = useGoogleSheets(electionState.tourActuel === 1 ? 'Résultats_T1' : 'Résultats_T2');
+  } = useGoogleSheets(electionState.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2');
 
   const [consolidation, setConsolidation] = useState({
     totaux: {

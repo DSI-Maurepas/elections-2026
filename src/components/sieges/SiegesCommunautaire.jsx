@@ -7,7 +7,7 @@ const SiegesCommunautaire = () => {
   const { state } = useElectionState();
   const { data: candidats } = useGoogleSheets('Candidats');
   const { data: resultats } = useGoogleSheets(
-    state.tourActuel === 1 ? 'Résultats_T1' : 'Résultats_T2'
+    state.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2'
   );
 
   const [sieges, setSieges] = useState([]);

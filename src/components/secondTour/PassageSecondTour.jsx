@@ -6,7 +6,7 @@ import auditService from '../../services/auditService';
 const PassageSecondTour = () => {
   const { state: electionState, passerSecondTour } = useElectionState();
   const { data: candidats } = useGoogleSheets('Candidats');
-  const { data: resultats } = useGoogleSheets('Résultats_T1');
+  const { data: resultats } = useGoogleSheets('Resultats_T1');
 
   const [classement, setClassement] = useState([]);
   const [candidatsQualifies, setCandidatsQualifies] = useState([]);

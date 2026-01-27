@@ -10,7 +10,7 @@ const ResultatsClassement = () => {
   const { state: electionState } = useElectionState();
   const { data: candidats } = useGoogleSheets('Candidats');
   const { data: resultats } = useGoogleSheets(
-    electionState.tourActuel === 1 ? 'Résultats_T1' : 'Résultats_T2'
+    electionState.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2'
   );
 
   const [classement, setClassement] = useState([]);
