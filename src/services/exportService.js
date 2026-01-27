@@ -3,7 +3,7 @@
 // Note: Nécessite jsPDF et xlsx (à ajouter au package.json si export côté client souhaité)
 
 import { generateFilename, formatDateTime, formatNumber, formatPercent } from '../utils/formatters';
-import { ELECTION_CONFIG } from '../utils/constants';
+import { ELECTION_CONFIG, SHEET_NAMES } from '../utils/constants';
 import auditService from './auditService';
 import googleSheetsService from './googleSheetsService';
 
@@ -15,26 +15,36 @@ class ExportService {
     try {
       switch (type) {
         case 'participation':
-          const participation = await googleSheetsService.getParticipationT1();
+          const sheetNameParticipation = tour === 1 ? SHEET_NAMES.PARTICIPATION_T1 : SHEET_NAMES.PARTICIPATION_T2;
+          const participation = await googleSheetsService.getData(sheetNameParticipation);
           await this.exportParticipationCSV(participation, tour);
           break;
         
         case 'resultats':
-          const resultats = tour === 1 
-            ? await googleSheetsService.getResultatsT1()
-            : await googleSheetsService.getResultatsT2();
-          const candidats = await googleSheetsService.getCandidats();
+          const sheetNameResultats = tour === 1 ? SHEET_NAMES.RESULTATS_T1 : SHEET_NAMES.RESULTATS_T2;
+          const resultats = await googleSheetsService.getData(sheetNameResultats);
+          const candidats = await googleSheetsService.getData(SHEET_NAMES.CANDIDATS);
           await this.exportResultatsCSV(resultats, candidats, tour);
           break;
         
+        case 'sieges':
         case 'sieges_municipal':
-          // Les sièges doivent être calculés avant export
-          console.warn('Export sièges municipal: données à fournir par le composant');
+          alert('Export sièges : Veuillez calculer les sièges avant d\'exporter.');
+          console.warn('Export sièges municipal: calcul requis avant export');
           break;
         
         case 'sieges_communautaire':
-          // Les sièges doivent être calculés avant export
-          console.warn('Export sièges communautaire: données à fournir par le composant');
+          alert('Export sièges communautaires : Veuillez calculer les sièges avant d\'exporter.');
+          console.warn('Export sièges communautaire: calcul requis avant export');
+          break;
+        
+        case 'audit':
+          const auditData = await googleSheetsService.getData(SHEET_NAMES.AUDIT_LOG);
+          await this.exportAuditCSV(auditData);
+          break;
+        
+        case 'complet':
+          await this.exportCompletCSV(tour);
           break;
         
         default:
@@ -51,18 +61,14 @@ class ExportService {
    */
   async exportPDF(type, tour = 1) {
     try {
-      switch (type) {
-        case 'pv_resultats':
-          const resultats = tour === 1 
-            ? await googleSheetsService.getResultatsT1()
-            : await googleSheetsService.getResultatsT2();
-          const candidats = await googleSheetsService.getCandidats();
-          await this.openPVForPrint(resultats, candidats, tour);
-          break;
-        
-        default:
-          console.warn(`Export PDF pour type "${type}" non implémenté. Utilisez openPVForPrint() directement.`);
-          throw new Error(`Type d'export PDF inconnu: ${type}`);
+      // Accepter 'resultats' OU 'pv_resultats'
+      if (type === 'resultats' || type === 'pv_resultats') {
+        const sheetNameResultats = tour === 1 ? SHEET_NAMES.RESULTATS_T1 : SHEET_NAMES.RESULTATS_T2;
+        const resultats = await googleSheetsService.getData(sheetNameResultats);
+        const candidats = await googleSheetsService.getData(SHEET_NAMES.CANDIDATS);
+        await this.openPVForPrint(resultats, candidats, tour);
+      } else {
+        throw new Error(`Type d'export PDF inconnu: ${type}`);
       }
     } catch (error) {
       console.error('Erreur export PDF:', error);
@@ -111,15 +117,22 @@ class ExportService {
    * Exporte la participation en CSV
    */
   async exportParticipationCSV(participation, tour = 1) {
-    const data = participation.map(p => ({
-      'Bureau': p.bureauId,
-      'Heure': p.heure,
-      'Inscrits': p.inscrits,
-      'Votants': p.votants,
-      'Taux (%)': p.tauxPct.toFixed(2),
-      'Saisi par': p.saisiPar,
-      'Timestamp': formatDateTime(p.timestamp)
-    }));
+    const data = participation.map(p => {
+      // Calculer le taux si absent
+      const tauxPct = p.tauxPct !== undefined 
+        ? p.tauxPct 
+        : (p.inscrits > 0 ? (p.votants / p.inscrits) * 100 : 0);
+      
+      return {
+        'Bureau': p.bureauId || '',
+        'Heure': p.heure || '',
+        'Inscrits': p.inscrits || 0,
+        'Votants': p.votants || 0,
+        'Taux (%)': tauxPct.toFixed(2),
+        'Saisi par': p.saisiPar || '',
+        'Timestamp': formatDateTime(p.timestamp || new Date().toISOString())
+      };
+    });
 
     const filename = generateFilename(`participation_tour${tour}`, 'csv');
     this.exportToCSV(data, filename);
@@ -187,6 +200,73 @@ class ExportService {
 
     const filename = generateFilename('sieges_communautaire', 'csv');
     this.exportToCSV(data, filename);
+  }
+
+  /**
+   * Exporte le journal d'audit en CSV
+   */
+  async exportAuditCSV(auditData) {
+    const data = auditData.map(a => ({
+      'Date': formatDateTime(a.timestamp || a.date),
+      'Action': a.action || '',
+      'Utilisateur': a.user || a.saisiPar || '',
+      'Cible': a.target || a.bureauId || '',
+      'Détails': a.details || '',
+      'Sévérité': a.severity || 'INFO'
+    }));
+
+    const filename = generateFilename('audit_log', 'csv');
+    this.exportToCSV(data, filename);
+  }
+
+  /**
+   * Exporte toutes les données en un seul fichier
+   */
+  async exportCompletCSV(tour = 1) {
+    try {
+      // Créer un ZIP avec tous les exports
+      const bureaux = await googleSheetsService.getData(SHEET_NAMES.BUREAUX);
+      const candidats = await googleSheetsService.getData(SHEET_NAMES.CANDIDATS);
+      
+      const sheetNameParticipation = tour === 1 ? SHEET_NAMES.PARTICIPATION_T1 : SHEET_NAMES.PARTICIPATION_T2;
+      const participation = await googleSheetsService.getData(sheetNameParticipation);
+      
+      const sheetNameResultats = tour === 1 ? SHEET_NAMES.RESULTATS_T1 : SHEET_NAMES.RESULTATS_T2;
+      const resultats = await googleSheetsService.getData(sheetNameResultats);
+      
+      // Export de chaque type
+      await this.exportParticipationCSV(participation, tour);
+      await this.exportResultatsCSV(resultats, candidats, tour);
+      
+      // Exporter les bureaux
+      const bureauxData = bureaux.map(b => ({
+        'ID': b.id,
+        'Nom': b.nom,
+        'Adresse': b.adresse,
+        'Inscrits': b.inscrits,
+        'Actif': b.actif ? 'Oui' : 'Non'
+      }));
+      const filenameBureaux = generateFilename(`bureaux_tour${tour}`, 'csv');
+      this.exportToCSV(bureauxData, filenameBureaux);
+      
+      // Exporter les candidats
+      const candidatsData = candidats.map(c => ({
+        'ID': c.listeId,
+        'Liste': c.nomListe,
+        'Tête de liste': `${c.teteListePrenom} ${c.teteListeNom}`,
+        'Couleur': c.couleur,
+        'Actif T1': c.actifT1 ? 'Oui' : 'Non',
+        'Actif T2': c.actifT2 ? 'Oui' : 'Non'
+      }));
+      const filenameCandidats = generateFilename(`candidats_tour${tour}`, 'csv');
+      this.exportToCSV(candidatsData, filenameCandidats);
+      
+      alert('Export complet : 4 fichiers CSV téléchargés (Bureaux, Candidats, Participation, Résultats)');
+      
+    } catch (error) {
+      console.error('Erreur export complet:', error);
+      throw error;
+    }
   }
 
   /**
