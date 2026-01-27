@@ -21,6 +21,7 @@ import ConfigCandidats from "./components/admin/ConfigCandidats";
 import AuditLog from "./components/admin/AuditLog";
 import ExportPDF from "./components/exports/ExportPDF";
 import ExportExcel from "./components/exports/ExportExcel";
+import { HashRouter } from "react-router-dom";
 
 import "./styles/App.css";
 import "./styles/variables.css";

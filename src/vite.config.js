@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
   return {
     // Le 'base' doit correspondre au nom de votre dépôt GitHub (ex: /elections-2026/)
     // Si vous utilisez un domaine personnalisé, laissez '/'
-    base: mode === 'production' ? '/elections-maurepas-2026/' : '/',
+    base: mode === 'production' ? '/elections-2026/' : '/',
 
     plugins: [
       react({

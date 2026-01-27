@@ -22,10 +22,11 @@ const Footer = () => {
         <div className="footer-section">
           <h4>📞 Support technique</h4>
           <p>
-            DSI - Mairie<br />
-            En cas de problème le jour du scrutin :<br />
-            <strong>Contactez immédiatement le DSI</strong>
-          </p>
+            DSI - Mairie de Maurepas<br />
+            En cas de problème contactez<br />
+			📧 <strong>j.matrat@maurepas.fr </strong><br />
+            📞 <strong>06 79 93 18 91</strong>
+		 </p>
         </div>
 
         <div className="footer-section">
@@ -33,15 +34,15 @@ const Footer = () => {
           <p>
             Toutes les actions sont tracées<br />
             Audit complet disponible<br />
-            Données sécurisées (Google Sheets API)
+            Données sécurisées<br />
+			Validation - Consolidation
           </p>
         </div>
 
         <div className="footer-section">
           <h4>ℹ️ Informations</h4>
           <p>
-            Version 1.0.0<br />
-            React 18 + Vite<br />
+            Version 2.6.4<br />
             13 bureaux de vote configurés
           </p>
         </div>
@@ -49,8 +50,8 @@ const Footer = () => {
 
       <div className="footer-bottom">
         <p>
-          © {currentYear} - Mairie - Tous droits réservés<br />
-          Application développée pour les élections municipales du 15 mars 2026
+          © {currentYear} - DSI - Mairie de MAUREPAS - Tous droits réservés<br />
+          Application développée par la DSI pour les élections municipales du 15 mars 2026
         </p>
       </div>
     </footer>

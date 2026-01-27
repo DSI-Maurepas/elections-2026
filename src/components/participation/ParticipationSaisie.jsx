@@ -21,11 +21,17 @@ const ParticipationSaisie = () => {
   const [inscrits, setInscrits] = useState(0);
   const [votants, setVotants] = useState({
     '08h': 0,
+    '09h': 0,
     '10h': 0,
+    '11h': 0,
     '12h': 0,
+    '13h': 0,
     '14h': 0,
+    '15h': 0,
     '16h': 0,
+    '17h': 0,
     '18h': 0,
+    '19h': 0,
     '20h': 0
   });
   const [loading, setLoading] = useState(false);
@@ -47,11 +53,17 @@ const ParticipationSaisie = () => {
         if (existingData) {
           setVotants({
             '08h': existingData.votants08h || 0,
+            '09h': existingData.votants09h || 0,
             '10h': existingData.votants10h || 0,
+            '11h': existingData.votants11h || 0,
             '12h': existingData.votants12h || 0,
+            '13h': existingData.votants13h || 0,
             '14h': existingData.votants14h || 0,
+            '15h': existingData.votants15h || 0,
             '16h': existingData.votants16h || 0,
+            '17h': existingData.votants17h || 0,
             '18h': existingData.votants18h || 0,
+            '19h': existingData.votants19h || 0,
             '20h': existingData.votants20h || 0
           });
         }
@@ -72,7 +84,7 @@ const ParticipationSaisie = () => {
     }
 
     // Validation : doit être cumulatif (croissant)
-    const heures = ['08h', '10h', '12h', '14h', '16h', '18h', '20h'];
+    const heures = ['08h','09h','10h','11h','12h','13h','14h','15h','16h','17h','18h','19h','20h'];
     const currentIndex = heures.indexOf(heure);
     
     if (currentIndex > 0) {
@@ -110,11 +122,17 @@ const ParticipationSaisie = () => {
         tour: electionState.tourActuel,
         inscrits: inscrits,
         votants08h: votants['08h'],
+        votants09h: votants['09h'],
         votants10h: votants['10h'],
+        votants11h: votants['11h'],
         votants12h: votants['12h'],
+        votants13h: votants['13h'],
         votants14h: votants['14h'],
+        votants15h: votants['15h'],
         votants16h: votants['16h'],
+        votants17h: votants['17h'],
         votants18h: votants['18h'],
+        votants19h: votants['19h'],
         votants20h: votants['20h'],
         timestamp: new Date().toISOString()
       };
@@ -193,7 +211,7 @@ const ParticipationSaisie = () => {
             <div className="votants-grid">
               <h3>Votants cumulés par heure :</h3>
               
-              {['08h', '10h', '12h', '14h', '16h', '18h', '20h'].map(heure => (
+              {['08h','09h','10h','11h','12h','13h','14h','15h','16h','17h','18h','19h','20h'].map(heure => (
                 <div key={heure} className="votants-row">
                   <label>{heure} :</label>
                   <input
