@@ -5,8 +5,71 @@
 import { generateFilename, formatDateTime, formatNumber, formatPercent } from '../utils/formatters';
 import { ELECTION_CONFIG } from '../utils/constants';
 import auditService from './auditService';
+import googleSheetsService from './googleSheetsService';
 
 class ExportService {
+  /**
+   * NOUVELLE MÉTHODE - Export Excel selon le type
+   */
+  async exportExcel(type, tour = 1) {
+    try {
+      switch (type) {
+        case 'participation':
+          const participation = await googleSheetsService.getParticipationT1();
+          await this.exportParticipationCSV(participation, tour);
+          break;
+        
+        case 'resultats':
+          const resultats = tour === 1 
+            ? await googleSheetsService.getResultatsT1()
+            : await googleSheetsService.getResultatsT2();
+          const candidats = await googleSheetsService.getCandidats();
+          await this.exportResultatsCSV(resultats, candidats, tour);
+          break;
+        
+        case 'sieges_municipal':
+          // Les sièges doivent être calculés avant export
+          console.warn('Export sièges municipal: données à fournir par le composant');
+          break;
+        
+        case 'sieges_communautaire':
+          // Les sièges doivent être calculés avant export
+          console.warn('Export sièges communautaire: données à fournir par le composant');
+          break;
+        
+        default:
+          throw new Error(`Type d'export inconnu: ${type}`);
+      }
+    } catch (error) {
+      console.error('Erreur export Excel:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * NOUVELLE MÉTHODE - Export PDF selon le type
+   */
+  async exportPDF(type, tour = 1) {
+    try {
+      switch (type) {
+        case 'pv_resultats':
+          const resultats = tour === 1 
+            ? await googleSheetsService.getResultatsT1()
+            : await googleSheetsService.getResultatsT2();
+          const candidats = await googleSheetsService.getCandidats();
+          await this.openPVForPrint(resultats, candidats, tour);
+          break;
+        
+        default:
+          console.warn(`Export PDF pour type "${type}" non implémenté. Utilisez openPVForPrint() directement.`);
+          throw new Error(`Type d'export PDF inconnu: ${type}`);
+      }
+    } catch (error) {
+      console.error('Erreur export PDF:', error);
+      throw error;
+    }
+  }
+
   /**
    * Exporte les données en CSV (compatible Excel)
    */
