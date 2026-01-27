@@ -12,20 +12,20 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout repository
+      - name: ⬇️ Checkout
         uses: actions/checkout@v4
 
-      - name: ⚙️ Setup Node.js
+      - name: 🟢 Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18
           cache: npm
 
       - name: 📦 Install dependencies
@@ -34,23 +34,23 @@ jobs:
       - name: 🛠️ Build application
         run: npm run build
         env:
-          VITE_GOOGLE_CLIENT_ID=702016125879-8t5lau13b7mvifl4ttp2drh2v6871ad4.apps.googleusercontent.com
-          VITE_SPREADSHEET_ID=1k0ZHelPxIUdgSXbUekhWGIt49Sjrq_Y4IgEB9K1FZP0
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          # (optionnel si tu l’utilises)
+          # VITE_SPREADSHEET_ID: ${{ secrets.VITE_SPREADSHEET_ID }}
 
-      - name: 📤 Upload build artifact
+      - name: 📤 Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
-    runs-on: ubuntu-latest
-    needs: build
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
 
     steps:
       - name: 🚀 Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
