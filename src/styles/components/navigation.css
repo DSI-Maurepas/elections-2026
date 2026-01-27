@@ -1,0 +1,94 @@
+/* Navigation principale */
+.main-navigation {
+  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+  color: white;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.nav-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.2);
+}
+
+.nav-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.election-status {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.tour-badge {
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.tour-badge.tour-1 {
+  background: #FF9800;
+}
+
+.tour-badge.tour-2 {
+  background: #4CAF50;
+}
+
+.lock-status {
+  padding: 0.4rem 0.8rem;
+  border-radius: 15px;
+  font-size: 0.85rem;
+}
+
+.lock-status.locked {
+  background: #f44336;
+}
+
+.lock-status.unlocked {
+  background: #4CAF50;
+}
+
+.nav-menu {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.nav-item {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  color: white;
+  padding: 0.8rem 1.2rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-size: 0.95rem;
+}
+
+.nav-item:hover {
+  background: rgba(255,255,255,0.2);
+  transform: translateY(-2px);
+}
+
+.nav-item.active {
+  background: rgba(255,255,255,0.3);
+  font-weight: bold;
+}
+
+.nav-info {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.2);
+  font-size: 0.9rem;
+  opacity: 0.9;
+}

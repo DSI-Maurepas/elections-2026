@@ -1,0 +1,166 @@
+import { useState, useCallback, useEffect, useRef } from 'react';
+import googleSheetsService from '../services/googleSheetsService';
+
+/**
+ * Hook personnalisé pour simplifier les interactions avec Google Sheets
+ * Gère le chargement, les erreurs, et les opérations CRUD
+ */
+export const useGoogleSheets = (sheetName) => {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const lastFiltersRef = useRef({});
+  const reloadTimerRef = useRef(null);
+
+  // Charger les données
+  const load = useCallback(async (filters = {}) => {
+    lastFiltersRef.current = filters || {};
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const result = await googleSheetsService.getData(sheetName, filters);
+      setData(result);
+      
+      return result;
+    } catch (err) {
+      console.error(`Erreur chargement ${sheetName}:`, err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [sheetName]);
+
+  // Debounce reload pour éviter de dépasser les quotas Sheets en cas d'enchaînement d'écritures
+  const scheduleReload = useCallback(() => {
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    reloadTimerRef.current = setTimeout(() => {
+      load(lastFiltersRef.current);
+    }, 250);
+  }, [load]);
+
+  // Écoute un événement global pour rafraîchir les données après une écriture ailleurs
+  useEffect(() => {
+    const handler = (evt) => {
+      const target = evt?.detail?.sheetName;
+      if (target && target === sheetName) {
+        scheduleReload();
+      }
+    };
+    window.addEventListener('sheets:changed', handler);
+    return () => {
+      window.removeEventListener('sheets:changed', handler);
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    };
+  }, [sheetName, scheduleReload]);
+
+
+  // Créer une nouvelle ligne
+  const create = useCallback(async (rowData) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const result = await googleSheetsService.appendRow(sheetName, rowData);
+      
+      // Recharger les données
+      await load();
+      
+      return result;
+    } catch (err) {
+      console.error(`Erreur création ${sheetName}:`, err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [sheetName, load]);
+
+  // Mettre à jour une ligne
+  const update = useCallback(async (rowIndex, rowData) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const result = await googleSheetsService.updateRow(sheetName, rowIndex, rowData);
+      
+      // Recharger les données
+      await load();
+      
+      return result;
+    } catch (err) {
+      console.error(`Erreur mise à jour ${sheetName}:`, err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [sheetName, load]);
+
+  // Supprimer une ligne
+  const remove = useCallback(async (rowIndex) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      await googleSheetsService.deleteRow(sheetName, rowIndex);
+      
+      // Recharger les données
+      await load();
+    } catch (err) {
+      console.error(`Erreur suppression ${sheetName}:`, err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [sheetName, load]);
+
+  // Créer ou mettre à jour en masse
+  const batchUpdate = useCallback(async (rows) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const result = await googleSheetsService.batchUpdate(sheetName, rows);
+      
+      // Recharger les données
+      await load();
+      
+      return result;
+    } catch (err) {
+      console.error(`Erreur batch update ${sheetName}:`, err);
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [sheetName, load]);
+
+  // Rafraîchir les données
+  const refresh = useCallback(async () => {
+    return load();
+  }, [load]);
+
+  // Réinitialiser l'erreur
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  return {
+    data,
+    loading,
+    error,
+    load,
+    create,
+    update,
+    remove,
+    batchUpdate,
+    refresh,
+    clearError
+  };
+};
+
+export default useGoogleSheets;
