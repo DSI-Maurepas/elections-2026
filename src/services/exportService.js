@@ -67,6 +67,20 @@ class ExportService {
         const resultats = await googleSheetsService.getData(sheetNameResultats);
         const candidats = await googleSheetsService.getData(SHEET_NAMES.CANDIDATS);
         await this.openPVForPrint(resultats, candidats, tour);
+      } else if (type === 'participation') {
+        const sheetNameParticipation = tour === 1 ? SHEET_NAMES.PARTICIPATION_T1 : SHEET_NAMES.PARTICIPATION_T2;
+        const participation = await googleSheetsService.getData(sheetNameParticipation);
+        const bureaux = await googleSheetsService.getData(SHEET_NAMES.BUREAUX);
+        await this.openParticipationForPrint(participation, bureaux, tour);
+      } else if (type === 'sieges') {
+        alert('Export PDF Sièges : Veuillez calculer les sièges avant d\'exporter en PDF.\n\nPour l\'instant, utilisez l\'export Excel (CSV).');
+        console.warn('Export PDF sièges: non implémenté - utilisez CSV');
+      } else if (type === 'statistiques') {
+        const sheetNameResultats = tour === 1 ? SHEET_NAMES.RESULTATS_T1 : SHEET_NAMES.RESULTATS_T2;
+        const resultats = await googleSheetsService.getData(sheetNameResultats);
+        const candidats = await googleSheetsService.getData(SHEET_NAMES.CANDIDATS);
+        const bureaux = await googleSheetsService.getData(SHEET_NAMES.BUREAUX);
+        await this.openStatistiquesForPrint(resultats, candidats, bureaux, tour);
       } else {
         throw new Error(`Type d'export PDF inconnu: ${type}`);
       }
@@ -464,6 +478,273 @@ class ExportService {
     printWindow.document.close();
     
     auditService.logExport('PV_HTML', `tour${tour}`, { bureaux: resultats.length });
+  }
+
+  /**
+   * Ouvre la participation dans une nouvelle fenêtre pour impression
+   */
+  async openParticipationForPrint(participation, bureaux, tour = 1) {
+    const html = this.generateParticipationHTML(participation, bureaux, tour);
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(html);
+    printWindow.document.close();
+    
+    auditService.logExport('PARTICIPATION_PDF', `tour${tour}`, { lignes: participation.length });
+  }
+
+  /**
+   * Ouvre les statistiques dans une nouvelle fenêtre pour impression
+   */
+  async openStatistiquesForPrint(resultats, candidats, bureaux, tour = 1) {
+    const html = this.generateStatistiquesHTML(resultats, candidats, bureaux, tour);
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(html);
+    printWindow.document.close();
+    
+    auditService.logExport('STATS_PDF', `tour${tour}`, { bureaux: bureaux.length });
+  }
+
+  /**
+   * Génère le HTML de participation pour impression
+   */
+  generateParticipationHTML(participation, bureaux, tour = 1) {
+    const date = new Date();
+    
+    // Calculer les totaux
+    let totalInscrits = 0;
+    let totalVotants = 0;
+    
+    participation.forEach(p => {
+      totalInscrits += p.inscrits || 0;
+      totalVotants += p.votants || 0;
+    });
+    
+    const tauxGlobal = totalInscrits > 0 ? (totalVotants / totalInscrits) * 100 : 0;
+    
+    return `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Participation - Élections Municipales ${ELECTION_CONFIG.COMMUNE_NAME} - Tour ${tour}</title>
+  <style>
+    body {
+      font-family: 'Times New Roman', serif;
+      margin: 40px;
+      color: #000;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+      border-bottom: 2px solid #0055A4;
+      padding-bottom: 20px;
+    }
+    h1 { color: #0055A4; margin: 0; }
+    .info { margin: 20px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    th, td {
+      border: 1px solid #333;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #0055A4;
+      color: white;
+    }
+    .total {
+      font-weight: bold;
+      background-color: #f0f0f0;
+    }
+    @media print {
+      body { margin: 20px; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>RÉPUBLIQUE FRANÇAISE</h1>
+    <h2>Participation - Élections Municipales</h2>
+    <h3>${ELECTION_CONFIG.COMMUNE_NAME} (${ELECTION_CONFIG.COMMUNE_CODE})</h3>
+    <h3>${tour === 1 ? '1er Tour' : '2nd Tour'} - ${ELECTION_CONFIG[tour === 1 ? 'ELECTION_DATE_T1' : 'ELECTION_DATE_T2']}</h3>
+  </div>
+
+  <div class="info">
+    <p><strong>Date d'édition:</strong> ${formatDateTime(date.toISOString())}</p>
+    <p><strong>Inscrits totaux:</strong> ${formatNumber(totalInscrits)}</p>
+    <p><strong>Votants totaux:</strong> ${formatNumber(totalVotants)}</p>
+    <p><strong>Taux de participation:</strong> ${tauxGlobal.toFixed(2)}%</p>
+  </div>
+
+  <h3>Détail par Bureau</h3>
+  <table>
+    <tr>
+      <th>Bureau</th>
+      <th>Heure</th>
+      <th>Inscrits</th>
+      <th>Votants</th>
+      <th>Taux (%)</th>
+    </tr>
+    ${participation.map(p => {
+      const taux = p.inscrits > 0 ? (p.votants / p.inscrits) * 100 : 0;
+      return `
+    <tr>
+      <td>${p.bureauId || ''}</td>
+      <td>${p.heure || ''}</td>
+      <td>${formatNumber(p.inscrits || 0)}</td>
+      <td>${formatNumber(p.votants || 0)}</td>
+      <td>${taux.toFixed(2)}%</td>
+    </tr>
+      `;
+    }).join('')}
+    <tr class="total">
+      <td colspan="2">TOTAL</td>
+      <td>${formatNumber(totalInscrits)}</td>
+      <td>${formatNumber(totalVotants)}</td>
+      <td>${tauxGlobal.toFixed(2)}%</td>
+    </tr>
+  </table>
+
+  <button class="no-print" onclick="window.print()">Imprimer</button>
+</body>
+</html>
+    `;
+  }
+
+  /**
+   * Génère le HTML de statistiques pour impression
+   */
+  generateStatistiquesHTML(resultats, candidats, bureaux, tour = 1) {
+    const date = new Date();
+    const consolidation = this.consolidateResults(resultats, candidats);
+    
+    return `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Statistiques - Élections Municipales ${ELECTION_CONFIG.COMMUNE_NAME} - Tour ${tour}</title>
+  <style>
+    body {
+      font-family: 'Times New Roman', serif;
+      margin: 40px;
+      color: #000;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+      border-bottom: 2px solid #0055A4;
+      padding-bottom: 20px;
+    }
+    h1 { color: #0055A4; margin: 0; }
+    .info { margin: 20px 0; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      margin: 20px 0;
+    }
+    .stat-box {
+      border: 1px solid #333;
+      padding: 15px;
+      background: #f9f9f9;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #0055A4;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    th, td {
+      border: 1px solid #333;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #0055A4;
+      color: white;
+    }
+    @media print {
+      body { margin: 20px; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>RÉPUBLIQUE FRANÇAISE</h1>
+    <h2>Statistiques - Élections Municipales</h2>
+    <h3>${ELECTION_CONFIG.COMMUNE_NAME} (${ELECTION_CONFIG.COMMUNE_CODE})</h3>
+    <h3>${tour === 1 ? '1er Tour' : '2nd Tour'} - ${ELECTION_CONFIG[tour === 1 ? 'ELECTION_DATE_T1' : 'ELECTION_DATE_T2']}</h3>
+  </div>
+
+  <div class="info">
+    <p><strong>Date d'édition:</strong> ${formatDateTime(date.toISOString())}</p>
+    <p><strong>Nombre de bureaux:</strong> ${bureaux.length}</p>
+  </div>
+
+  <h3>Chiffres Clés</h3>
+  <div class="stats-grid">
+    <div class="stat-box">
+      <div>Inscrits</div>
+      <div class="stat-value">${formatNumber(consolidation.totalInscrits)}</div>
+    </div>
+    <div class="stat-box">
+      <div>Votants</div>
+      <div class="stat-value">${formatNumber(consolidation.totalVotants)}</div>
+    </div>
+    <div class="stat-box">
+      <div>Taux de Participation</div>
+      <div class="stat-value">${formatPercent(consolidation.tauxParticipation)}</div>
+    </div>
+    <div class="stat-box">
+      <div>Suffrages Exprimés</div>
+      <div class="stat-value">${formatNumber(consolidation.totalExprimes)}</div>
+    </div>
+    <div class="stat-box">
+      <div>Bulletins Blancs</div>
+      <div class="stat-value">${formatNumber(consolidation.totalBlancs)}</div>
+    </div>
+    <div class="stat-box">
+      <div>Bulletins Nuls</div>
+      <div class="stat-value">${formatNumber(consolidation.totalNuls)}</div>
+    </div>
+  </div>
+
+  <h3>Résultats par Liste</h3>
+  <table>
+    <tr>
+      <th>Rang</th>
+      <th>Liste</th>
+      <th>Voix</th>
+      <th>% Exprimés</th>
+      <th>% Inscrits</th>
+    </tr>
+    ${consolidation.resultatsParListe.map((r, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${r.nomListe}</td>
+      <td>${formatNumber(r.voix)}</td>
+      <td>${formatPercent(r.pctExprimes)}</td>
+      <td>${formatPercent(r.pctInscrits)}</td>
+    </tr>
+    `).join('')}
+  </table>
+
+  <button class="no-print" onclick="window.print()">Imprimer</button>
+</body>
+</html>
+    `;
   }
 
   /**
