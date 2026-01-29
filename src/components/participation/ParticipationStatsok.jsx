@@ -29,7 +29,7 @@ const ParticipationStats = () => {
   } = useGoogleSheets(electionState.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2');
 
   const heures = useMemo(() => (
-    ['09h', '10h', '11h', '12h', '13h', '14h', '15h', '16h', '17h', '18h', '19h', '20h']
+    ['08h', '09h', '10h', '11h', '12h', '13h', '14h', '15h', '16h', '17h', '18h', '19h', '20h']
   ), []);
 
   const getNum = (v) => {

@@ -187,42 +187,8 @@ async sleep(ms) {
   /**
    * Transforme les lignes brutes en objets selon la structure de la feuille
    */
-  _transformRows(sheetName, rows, header = []) {
+  _transformRows(sheetName, rows) {
     if (!rows || rows.length === 0) return [];
-
-    // Header-driven mapping (robuste aux décalages de colonnes)
-    const _norm = (s) => String(s ?? '')
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/\s+/g, '')
-      .replace(/[^a-z0-9_]/g, '');
-
-    const _h = Array.isArray(header) ? header : [];
-    const _hmap = {};
-    _h.forEach((h, i) => {
-      const k = _norm(h);
-      if (k) _hmap[k] = i;
-    });
-
-    const _idx = (key, fallback) => {
-      const k = _norm(key);
-      return (k && _hmap[k] !== undefined) ? _hmap[k] : fallback;
-    };
-
-    const _str = (row, key, fallback, def = '') => {
-      const i = _idx(key, fallback);
-      const v = (i !== undefined && i !== null) ? row[i] : undefined;
-      return (v === undefined || v === null) ? def : String(v);
-    };
-
-    const _int = (row, key, fallback, def = 0) => {
-      const i = _idx(key, fallback);
-      const v = (i !== undefined && i !== null) ? row[i] : undefined;
-      const n = parseInt(v, 10);
-      return Number.isFinite(n) ? n : def;
-    };
 
     switch (sheetName) {
       case 'Bureaux':
@@ -251,30 +217,24 @@ async sleep(ms) {
 
       case 'Participation_T1':
       case 'Participation_T2':
-        // Mapping par en-têtes (évite les décalages quand une colonne est ajoutée/supprimée)
-        // Colonnes attendues (Google Sheets) :
-        // A BureauID | B Tour | C Inscrits | D Votants09h | ... | O Votants20h | P Timestamp (optionnel)
         return rows.map(row => ({
-          bureauId: _str(row, 'BureauID', 0, ''),
-          tour: _int(row, 'Tour', 1, 1) || 1,
-          inscrits: _int(row, 'Inscrits', 2, 0),
-
-          // ⚠️ 08h supprimé : la première heure officielle est 09h
-          votants09h: _int(row, 'Votants09h', 3, 0),
-          votants10h: _int(row, 'Votants10h', 4, 0),
-          votants11h: _int(row, 'Votants11h', 5, 0),
-          votants12h: _int(row, 'Votants12h', 6, 0),
-          votants13h: _int(row, 'Votants13h', 7, 0),
-          votants14h: _int(row, 'Votants14h', 8, 0),
-          votants15h: _int(row, 'Votants15h', 9, 0),
-          votants16h: _int(row, 'Votants16h', 10, 0),
-          votants17h: _int(row, 'Votants17h', 11, 0),
-          votants18h: _int(row, 'Votants18h', 12, 0),
-          votants19h: _int(row, 'Votants19h', 13, 0),
-          votants20h: _int(row, 'Votants20h', 14, 0),
-
-          // Timestamp éventuel (si présent)
-          timestamp: _str(row, 'Timestamp', 15, '')
+          bureauId: row[0] || '',
+          tour: parseInt(row[1]) || 1,
+          inscrits: parseInt(row[2]) || 0,
+          votants08h: parseInt(row[3]) || 0,
+          votants09h: parseInt(row[4]) || 0,
+          votants10h: parseInt(row[5]) || 0,
+          votants11h: parseInt(row[6]) || 0,
+          votants12h: parseInt(row[7]) || 0,
+          votants13h: parseInt(row[8]) || 0,
+          votants14h: parseInt(row[9]) || 0,
+          votants15h: parseInt(row[10]) || 0,
+          votants16h: parseInt(row[11]) || 0,
+          votants17h: parseInt(row[12]) || 0,
+          votants18h: parseInt(row[13]) || 0,
+          votants19h: parseInt(row[14]) || 0,
+          votants20h: parseInt(row[15]) || 0,
+          timestamp: row[16] || ''
         }));
 
       case 'Resultats_T1':
@@ -320,11 +280,10 @@ default:
     return await this._dedup(key, async () => {
       const values = await this.getValues(a1);
       const rows = values.slice();
-      const header = rows.length > 0 ? rows[0] : [];
       if (rows.length > 0) rows.shift(); // remove header
       
       // Transformer les lignes en objets selon le sheetName
-      const transformed = this._transformRows(normalizedSheet, rows, header);
+      const transformed = this._transformRows(normalizedSheet, rows);
       
       // IMPORTANT : Ajouter rowIndex à chaque objet pour permettre update/delete
       const withRowIndex = transformed.map((obj, index) => ({
@@ -374,28 +333,6 @@ default:
           obj.timestamp ?? ''                  // N Timestamp
         ];
       }
-      case 'Participation_T1':
-      case 'Participation_T2':
-        // Ordre exact des colonnes Google Sheets (08h supprimé)
-        // A BureauID | B Tour | C Inscrits | D Votants09h ... | O Votants20h | P Timestamp (optionnel)
-        return [
-          obj.bureauId ?? '',                 // A BureauID
-          parseInt(obj.tour) || 1,            // B Tour
-          parseInt(obj.inscrits) || 0,        // C Inscrits
-          parseInt(obj.votants09h) || 0,      // D
-          parseInt(obj.votants10h) || 0,      // E
-          parseInt(obj.votants11h) || 0,      // F
-          parseInt(obj.votants12h) || 0,      // G
-          parseInt(obj.votants13h) || 0,      // H
-          parseInt(obj.votants14h) || 0,      // I
-          parseInt(obj.votants15h) || 0,      // J
-          parseInt(obj.votants16h) || 0,      // K
-          parseInt(obj.votants17h) || 0,      // L
-          parseInt(obj.votants18h) || 0,      // M
-          parseInt(obj.votants19h) || 0,      // N
-          parseInt(obj.votants20h) || 0,      // O
-          obj.timestamp ?? ''                 // P Timestamp (optionnel)
-        ];
 
       default:
         return Object.values(obj);

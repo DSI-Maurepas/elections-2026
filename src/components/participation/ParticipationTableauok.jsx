@@ -16,6 +16,7 @@ const ParticipationTableau = () => {
 
   const [totaux, setTotaux] = useState({
     inscrits: 0,
+    '08h': 0,
     '09h': 0,
     '10h': 0,
     '11h': 0,
@@ -40,6 +41,7 @@ const ParticipationTableau = () => {
     const newTotaux = participation.reduce((acc, p) => {
       return {
         inscrits: acc.inscrits + (p.inscrits || 0),
+        '08h': acc['08h'] + (p.votants08h || 0),
         '09h': acc['09h'] + (p.votants09h || 0),
         '10h': acc['10h'] + (p.votants10h || 0),
         '11h': acc['11h'] + (p.votants11h || 0),
@@ -55,6 +57,7 @@ const ParticipationTableau = () => {
       };
     }, {
       inscrits: 0,
+      '08h': 0,
       '09h': 0,
       '10h': 0,
       '11h': 0,
@@ -82,8 +85,8 @@ const ParticipationTableau = () => {
   };
 
 
-  // Heures des remontées (09h -> 20h)
-  const HOURS = ['09h','10h','11h','12h','13h','14h','15h','16h','17h','18h','19h','20h'];
+  // Heures des remontées (08h -> 20h)
+  const HOURS = ['08h','09h','10h','11h','12h','13h','14h','15h','16h','17h','18h','19h','20h'];
 
   return (
     <div className="participation-tableau">
