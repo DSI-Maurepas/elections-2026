@@ -92,27 +92,6 @@
   color: #4CAF50;
 }
 
-
-
-/* Responsive: participation (mobile) — inputs assez larges pour 4 chiffres mini */
-@media (max-width: 520px) {
-  .votants-row {
-    grid-template-columns: 64px minmax(140px, 1fr) 78px;
-    gap: 0.75rem;
-  }
-
-  .votants-row input {
-    width: 100%;
-    min-width: 8ch; /* ~ 4 chiffres + padding */
-    font-size: 1.05rem;
-    line-height: 1.2;
-  }
-
-  .votants-row .percentage {
-    font-size: 1rem;
-    white-space: nowrap;
-  }
-}
 .message {
   padding: 1rem;
   border-radius: 8px;
