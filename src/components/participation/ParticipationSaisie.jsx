@@ -189,16 +189,23 @@ const ParticipationSaisie = () => {
         <div className="form-group">
           <label>Bureau de vote :</label>
           <select
+            className="bureau-select"
             value={selectedBureau}
             onChange={(e) => setSelectedBureau(e.target.value)}
             required
           >
             <option value="">-- Sélectionner un bureau --</option>
-            {bureaux.map(bureau => (
-              <option key={bureau.id} value={bureau.id}>
-                {bureau.nom} ({bureau.inscrits} inscrits)
-              </option>
-            ))}
+            {bureaux.map(bureau => {
+              const rawId = String(bureau.id ?? '').trim();
+              const bvLabel = rawId.toUpperCase().startsWith('BV')
+                ? rawId.replace(/^BV\s*/i, 'BV ')
+                : `BV ${rawId}`;
+              return (
+                <option key={bureau.id} value={bureau.id}>
+                  {bvLabel} — {bureau.nom} ({bureau.inscrits} inscrits)
+                </option>
+              );
+            })}
           </select>
         </div>
 
@@ -219,7 +226,8 @@ const ParticipationSaisie = () => {
                     min="0"
                     max={inscrits}
                     value={votants[heure]}
-                    onChange={(e) => handleVotantsChange(heure, e.target.value)}
+                    onChange={(e) => setVotants(prev => ({ ...prev, [heure]: e.target.value }))}
+                    onBlur={(e) => handleVotantsChange(heure, e.target.value)}
                   />
                   <span className="percentage">
                     {inscrits > 0 ? ((votants[heure] / inscrits) * 100).toFixed(2) : 0}%

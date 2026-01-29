@@ -161,19 +161,7 @@ function App() {
 
   return (
     <div className="app">
-      <Navigation currentPage={currentPage} onNavigate={setCurrentPage} />
-
-      <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 1rem" }}>
-        {isAuthenticated ? (
-          <button className="action-btn" onClick={handleSignOut}>
-            Déconnexion
-          </button>
-        ) : (
-          <button className="action-btn primary" onClick={handleSignIn}>
-            Connexion Google
-          </button>
-        )}
-      </div>
+      <Navigation currentPage={currentPage} onNavigate={setCurrentPage} isAuthenticated={isAuthenticated} onSignIn={handleSignIn} onSignOut={handleSignOut} />
 
       <main className="main-content">{renderPage()}</main>
 

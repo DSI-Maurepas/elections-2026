@@ -23,8 +23,7 @@ const Footer = () => {
           <h4>📞 Support technique</h4>
           <p>
             DSI - Mairie de Maurepas<br />
-            En cas de problème contactez<br />
-			📧 <strong>j.matrat@maurepas.fr </strong><br />
+			📧 j.matrat@maurepas.fr <br />
             📞 <strong>06 79 93 18 91</strong>
 		 </p>
         </div>
@@ -42,8 +41,10 @@ const Footer = () => {
         <div className="footer-section">
           <h4>ℹ️ Informations</h4>
           <p>
-            Version 2.6.4<br />
-            13 bureaux de vote configurés
+            Version 3.6.4<br />
+            13 bureaux de vote configurés<br />
+            Premier tour : 15 mars 2026<br />
+            Second tour : 22 mars 2026
           </p>
         </div>
       </div>
@@ -51,7 +52,7 @@ const Footer = () => {
       <div className="footer-bottom">
         <p>
           © {currentYear} - DSI - Mairie de MAUREPAS - Tous droits réservés<br />
-          Application développée par la DSI pour les élections municipales du 15 mars 2026
+          Application développée par la DSI pour les élections municipales 2026
         </p>
       </div>
     </footer>

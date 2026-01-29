@@ -123,7 +123,7 @@ const ParticipationTableau = () => {
                     const votants = data?.[field] || 0;
                     const rate = calculateRate(votants, inscrits);
                     return (
-                      <td key={`${bureau.id}-${h}`} className="hour-cell">
+                      <td key={`${bureau.id}-${h}`} className={`hour-cell ${votants > 0 ? "is-filled" : "is-empty"}`}>
                         <div className="hour-votants">{votants.toLocaleString('fr-FR')}</div>
                         <div className="hour-percent">{rate}%</div>
                       </td>
@@ -151,8 +151,10 @@ const ParticipationTableau = () => {
       </div>
 
       <div className="legend">
-        <p><span className="legend-item has-data">■</span> Bureau avec données saisies</p>
-        <p><span className="legend-item no-data">■</span> Bureau en attente de saisie</p>
+        <p><span className="legend-item has-data" aria-hidden="true"></span> Bureau avec données saisies</p>
+        <p><span className="legend-item no-data" aria-hidden="true"></span> Bureau en attente de saisie</p>
+        <p><span className="legend-item cell-empty" aria-hidden="true"></span> Cellule heure non renseignée (fond rouge)</p>
+        <p><span className="legend-item cell-filled" aria-hidden="true"></span> Cellule heure renseignée (fond vert)</p>
       </div>
     </div>
   );

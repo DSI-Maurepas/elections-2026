@@ -1,154 +1,225 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useElectionState } from '../../hooks/useElectionState';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 
-/**
- * Validation des résultats
- * Vérifications et contrôles de cohérence
- */
-const ResultatsValidation = ({ onValidate }) => {
+const ResultatsValidation = () => {
   const { state: electionState } = useElectionState();
-  const { data: bureaux } = useGoogleSheets('Bureaux');
+
+  const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
   const { data: resultats, load: loadResultats } = useGoogleSheets(
     electionState.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2'
   );
 
-  const [validation, setValidation] = useState({
-    bureaux: [],
-    erreurs: [],
-    avertissements: [],
-    isValid: false
-  });
-
   useEffect(() => {
+    loadBureaux();
     loadResultats();
-  }, [loadResultats]);
+  }, [loadBureaux, loadResultats]);
 
-  useEffect(() => {
-    performValidation();
-  }, [resultats, bureaux]);
+  const validation = useMemo(() => {
+    const declaredSet = new Set(resultats.map((r) => r.bureauId));
+    return bureaux.map((bureau) => {
+      const declared = declaredSet.has(bureau.id);
+      const bureauResultat = resultats.find((r) => r.bureauId === bureau.id);
 
-  const performValidation = () => {
-    const bureauxValidation = [];
-    const erreurs = [];
-    const avertissements = [];
+      let errors = [];
+      let warnings = [];
 
-    // Vérifier chaque bureau
-    bureaux.forEach(bureau => {
-      const resultat = resultats.find(r => r.bureauId === bureau.id);
-      
-      const bureauCheck = {
-        bureauId: bureau.id,
-        bureauNom: bureau.nom,
-        isDeclare: !!resultat,
-        erreurs: [],
-        avertissements: []
-      };
+      if (declared && bureauResultat) {
+        const inscrits = Number(bureau.inscrits) || 0;
+        const votants = Number(bureauResultat.votants) || 0;
+        const blancs = Number(bureauResultat.blancs) || 0;
+        const nuls = Number(bureauResultat.nuls) || 0;
+        const exprimes = Number(bureauResultat.exprimes) || 0;
 
-      if (!resultat) {
-        bureauCheck.erreurs.push('Résultats non déclarés');
-        erreurs.push(`${bureau.nom}: Résultats manquants`);
-      } else {
-        // Contrôle 1: votants = blancs + nuls + exprimés
-        const somme = (resultat.blancs || 0) + (resultat.nuls || 0) + (resultat.exprimes || 0);
-        if (resultat.votants !== somme) {
-          bureauCheck.erreurs.push(
-            `Votants (${resultat.votants}) ≠ Blancs + Nuls + Exprimés (${somme})`
-          );
-          erreurs.push(`${bureau.nom}: Incohérence votants`);
-        }
-
-        // Contrôle 2: somme voix = exprimés
-        const sommeVoix = Object.values(resultat.voix || {}).reduce(
-          (sum, v) => sum + (v || 0), 0
-        );
-        if (sommeVoix !== resultat.exprimes) {
-          bureauCheck.erreurs.push(
-            `Somme voix (${sommeVoix}) ≠ Exprimés (${resultat.exprimes})`
-          );
-          erreurs.push(`${bureau.nom}: Incohérence exprimés`);
-        }
-
-        // Avertissement: taux de blancs élevé
-        if (resultat.votants > 0) {
-          const tauxBlancs = (resultat.blancs / resultat.votants) * 100;
-          if (tauxBlancs > 10) {
-            bureauCheck.avertissements.push(`Taux de blancs élevé: ${tauxBlancs.toFixed(1)}%`);
-            avertissements.push(`${bureau.nom}: ${tauxBlancs.toFixed(1)}% de blancs`);
-          }
-        }
+        if (votants > inscrits) errors.push('Votants > inscrits');
+        if (blancs + nuls + exprimes !== votants) errors.push('Somme ≠ votants');
+        if (exprimes === 0 && votants > 0) warnings.push('Aucun exprimé');
       }
 
-      bureauxValidation.push(bureauCheck);
-    });
+      const status = !declared
+        ? 'pending'
+        : errors.length > 0
+        ? 'error'
+        : warnings.length > 0
+        ? 'warning'
+        : 'success';
 
-    setValidation({
-      bureaux: bureauxValidation,
-      erreurs,
-      avertissements,
-      isValid: erreurs.length === 0 && bureauxValidation.every(b => b.isDeclare)
+      return {
+        ...bureau,
+        declared,
+        errors,
+        warnings,
+        status
+      };
     });
-  };
+  }, [bureaux, resultats]);
 
-  const handleValidateClick = () => {
-    if (validation.isValid && onValidate) {
-      onValidate();
-    }
-  };
+  const stats = useMemo(() => {
+    const declaredCount = validation.filter((v) => v.declared).length;
+    const errorCount = validation.filter((v) => v.errors.length > 0).length;
+    const warningCount = validation.filter((v) => v.warnings.length > 0).length;
+    return { declaredCount, errorCount, warningCount };
+  }, [validation]);
+
+  const allValid = stats.declaredCount === bureaux.length && stats.errorCount === 0;
+
+  // Classe de bandeau (visuel uniquement):
+  // - is-valid : tout est OK
+  // - is-error : au moins une erreur
+  // - is-warning : pas d'erreur mais avertissements ou déclarations manquantes
+  const bannerStateClass = allValid ? 'is-valid' : stats.errorCount > 0 ? 'is-error' : 'is-warning';
+  const bannerIcon = allValid ? '🟢' : stats.errorCount > 0 ? '🔴' : '🟠';
 
   return (
-    <div className="resultats-validation">
-      <h2>✅ Validation des résultats - Tour {electionState.tourActuel}</h2>
+    <div className="resultats-validation modern-card">
 
-      {/* Statut global */}
-      <div className={`validation-status ${validation.isValid ? 'valid' : 'invalid'}`}>
-        {validation.isValid ? (
-          <>
-            <div className="status-icon">✅</div>
-            <div className="status-text">
-              <strong>Tous les résultats sont valides</strong>
-              <p>Tous les bureaux ont déclaré leurs résultats sans erreur</p>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="status-icon">⚠️</div>
-            <div className="status-text">
-              <strong>Validation incomplète</strong>
-              <p>{validation.erreurs.length} erreur(s) à corriger</p>
-            </div>
-          </>
-        )}
+            <style>{`
+        /* ===== ResultatsValidation — responsive lisible (scopé) ===== */
+        .resultats-validation .validation-table.modern{
+          width: 100%;
+          border-collapse: separate;
+          border-spacing: 0;
+        }
+
+        /* Desktop/tablette large : tableau compact (sans chevauchement) */
+        @media (min-width: 901px){
+          .resultats-validation .validation-table.modern{
+            table-layout: fixed;
+          }
+          .resultats-validation .validation-table.modern th,
+          .resultats-validation .validation-table.modern td{
+            padding: 10px 10px;
+            box-sizing: border-box;
+          }
+          .resultats-validation .validation-table.modern th:nth-child(1),
+          .resultats-validation .validation-table.modern td:nth-child(1){
+            width: 36%;
+          }
+          .resultats-validation .validation-table.modern th:nth-child(2),
+          .resultats-validation .validation-table.modern td:nth-child(2){
+            width: 64px;
+            text-align: center;
+          }
+          .resultats-validation .validation-table.modern th:nth-child(3),
+          .resultats-validation .validation-table.modern td:nth-child(3),
+          .resultats-validation .validation-table.modern th:nth-child(4),
+          .resultats-validation .validation-table.modern td:nth-child(4){
+            width: 32%;
+          }
+          .resultats-validation .cell-bureau{
+            white-space: normal;
+            word-break: normal;
+            overflow-wrap: break-word; /* wrap sur mots, pas lettre par lettre */
+          }
+          .resultats-validation .cell-erreurs,
+          .resultats-validation .cell-avert{
+            white-space: normal;
+            word-break: break-word;
+          }
+          .resultats-validation .status-emoji{
+            justify-content: center;
+            padding: 6px 8px;
+          }
+        }
+
+        /* Mobile/tablette : rendu en cartes (0 scroll horizontal, lisible) */
+        @media (max-width: 900px){
+          .resultats-validation .validation-table.modern thead{
+            display: none;
+          }
+
+          .resultats-validation .validation-table.modern,
+          .resultats-validation .validation-table.modern tbody,
+          .resultats-validation .validation-table.modern tr,
+          .resultats-validation .validation-table.modern td{
+            display: block;
+            width: 100%;
+          }
+
+          .resultats-validation .validation-table.modern tr{
+            margin: 10px 0 14px;
+            padding: 10px 10px 6px;
+            border-radius: 16px;
+            border: 1px solid rgba(15, 23, 42, 0.12);
+            box-shadow: 0 12px 24px rgba(2, 6, 23, 0.08);
+            background: rgba(255,255,255,0.96);
+          }
+
+          .resultats-validation .validation-table.modern td{
+            border: none;
+            padding: 8px 10px;
+            box-sizing: border-box;
+          }
+
+          /* Bureau en en-tête de carte */
+          .resultats-validation .validation-table.modern td.cell-bureau{
+            padding: 6px 10px 10px;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+            margin-bottom: 8px;
+          }
+
+          .resultats-validation .bureau-main{
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
+          .resultats-validation .bureau-sep{
+            opacity: 0.65;
+            font-weight: 900;
+          }
+          .resultats-validation .bureau-nom{
+            font-weight: 800;
+          }
+
+          /* Lignes label/valeur */
+          .resultats-validation .validation-table.modern td[data-label]{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+          }
+          .resultats-validation .validation-table.modern td[data-label]::before{
+            content: attr(data-label);
+            font-weight: 900;
+            opacity: 0.75;
+            white-space: nowrap;
+          }
+
+          /* Statut centré */
+          .resultats-validation .cell-statut{
+            justify-content: flex-end;
+          }
+          .resultats-validation .status-emoji{
+            padding: 6px 10px;
+          }
+        }
+      `}</style>
+
+      <h2 className="validation-title">
+        ✅ Validation des résultats — <span>Tour {electionState.tourActuel}</span>
+      </h2>
+
+      {/* Bandeau global */}
+      <div className={`validation-banner ${bannerStateClass}`}>
+        <div className="banner-icon">{bannerIcon}</div>
+        <div className="banner-content">
+          <div className="banner-title">
+            {allValid ? 'Tous les résultats sont validés' : stats.errorCount > 0 ? 'Erreurs à corriger' : 'Validation requise'}
+          </div>
+
+          {/* Petits blocs (chips) : 1 ligne en écran / wrap en mobile (géré par CSS) */}
+          <div className="banner-chips">
+            <span className="chip">🏛️ Bureaux : {stats.declaredCount} / {bureaux.length}</span>
+            <span className="chip chip-error">🔴 Erreurs : {stats.errorCount}</span>
+            <span className="chip chip-warning">🟠 Avertissements : {stats.warningCount}</span>
+          </div>
+        </div>
       </div>
 
-      {/* Erreurs */}
-      {validation.erreurs.length > 0 && (
-        <div className="erreurs-section">
-          <h3>❌ Erreurs bloquantes ({validation.erreurs.length})</h3>
-          <ul className="erreurs-list">
-            {validation.erreurs.map((erreur, index) => (
-              <li key={index} className="erreur-item">{erreur}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Avertissements */}
-      {validation.avertissements.length > 0 && (
-        <div className="avertissements-section">
-          <h3>⚠️ Avertissements ({validation.avertissements.length})</h3>
-          <ul className="avertissements-list">
-            {validation.avertissements.map((avert, index) => (
-              <li key={index} className="avertissement-item">{avert}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Détail par bureau */}
-      <div className="bureaux-detail">
-        <h3>Détail par bureau :</h3>
-        <table className="validation-table">
+      {/* Tableau */}
+      <div className="validation-table-wrap">
+        <table className="validation-table modern">
           <thead>
             <tr>
               <th>Bureau</th>
@@ -158,61 +229,26 @@ const ResultatsValidation = ({ onValidate }) => {
             </tr>
           </thead>
           <tbody>
-            {validation.bureaux.map(bureau => (
-              <tr 
-                key={bureau.bureauId}
-                className={
-                  bureau.erreurs.length > 0 ? 'error' :
-                  !bureau.isDeclare ? 'warning' : 'success'
-                }
-              >
-                <td>{bureau.bureauNom}</td>
-                <td>
-                  {!bureau.isDeclare ? '❌ Non déclaré' :
-                   bureau.erreurs.length > 0 ? '⚠️ Erreurs' :
-                   '✅ Valide'}
+            {validation.map((v) => (
+              <tr key={v.id} className={`row-${v.status}`}>
+                <td data-label="Bureau" className="cell-bureau">
+                  <div className="bureau-main">
+                    <strong>{v.id}</strong><span className="bureau-sep">—</span><span className="bureau-nom">{v.nom}</span>
+                  </div>
                 </td>
-                <td>
-                  {bureau.erreurs.length > 0 && (
-                    <ul className="mini-list">
-                      {bureau.erreurs.map((err, i) => (
-                        <li key={i}>{err}</li>
-                      ))}
-                    </ul>
-                  )}
+                <td data-label="Statut" className="cell-statut">
+                  {v.status === 'success' && <span className="status-emoji" title="Conforme" aria-label="Conforme">🟢</span>}
+                  {v.status === 'error' && <span className="status-emoji" title="Erreurs" aria-label="Erreurs">🔴</span>}
+                  {v.status === 'warning' && <span className="status-emoji" title="À vérifier" aria-label="À vérifier">🟠</span>}
+                  {v.status === 'pending' && <span className="status-emoji" title="En attente" aria-label="En attente">⏳</span>}
                 </td>
-                <td>
-                  {bureau.avertissements.length > 0 && (
-                    <ul className="mini-list">
-                      {bureau.avertissements.map((avert, i) => (
-                        <li key={i}>{avert}</li>
-                      ))}
-                    </ul>
-                  )}
-                </td>
+                <td data-label="Erreurs" className="cell-erreurs">{v.errors.length ? v.errors.join(', ') : '—'}</td>
+                <td data-label="Avertissements" className="cell-avert">{v.warnings.length ? v.warnings.join(', ') : '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-
-      {/* Actions */}
-      {onValidate && (
-        <div className="validation-actions">
-          <button
-            onClick={handleValidateClick}
-            disabled={!validation.isValid}
-            className="btn-validate"
-          >
-            {validation.isValid ? '✅ Verrouiller le tour' : '❌ Impossible de verrouiller'}
-          </button>
-          {!validation.isValid && (
-            <p className="validation-help">
-              Corrigez toutes les erreurs avant de verrouiller le tour
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
 };

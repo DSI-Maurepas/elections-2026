@@ -239,17 +239,31 @@ async sleep(ms) {
 
       case 'Resultats_T1':
       case 'Resultats_T2':
-        return rows.map(row => ({
-          bureauId: row[0] || '',
-          votants: parseInt(row[1]) || 0,
-          blancs: parseInt(row[2]) || 0,
-          nuls: parseInt(row[3]) || 0,
-          exprimes: parseInt(row[4]) || 0,
-          voix: row[5] ? JSON.parse(row[5]) : {},
-          timestamp: row[6] || ''
-        }));
+        // Colonnes attendues (Google Sheets):
+        // A BureauID | B Inscrits | C Votants | D Blancs | E Nuls | F Exprimes | G..K L1_Voix..L5_Voix | L SaisiPar | M ValidePar | N Timestamp
+        return rows.map(row => {
+          const voix = {
+            L1: parseInt(row[6]) || 0,
+            L2: parseInt(row[7]) || 0,
+            L3: parseInt(row[8]) || 0,
+            L4: parseInt(row[9]) || 0,
+            L5: parseInt(row[10]) || 0,
+          };
 
-      default:
+          return {
+            bureauId: row[0] || '',
+            inscrits: parseInt(row[1]) || 0,
+            votants: parseInt(row[2]) || 0,
+            blancs: parseInt(row[3]) || 0,
+            nuls: parseInt(row[4]) || 0,
+            exprimes: parseInt(row[5]) || 0,
+            voix,
+            saisiPar: row[11] || '',
+            validePar: row[12] || '',
+            timestamp: row[13] || ''
+          };
+        });
+default:
         // Par défaut, retourner les lignes brutes
         return rows;
     }
@@ -282,14 +296,57 @@ async sleep(ms) {
     });
   }
 
+
+  /**
+   * Convertit un objet métier en ligne (Array) dans l'ordre exact des colonnes Google Sheets.
+   * IMPORTANT : évite les régressions liées à Object.values() (ordre non garanti / champs manquants).
+   */
+  _toRow(sheetName, rowData) {
+    if (Array.isArray(rowData)) return rowData;
+    const obj = rowData || {};
+
+    switch (sheetName) {
+      case 'Resultats_T1':
+      case 'Resultats_T2': {
+        const voix = obj.voix || {};
+        // Supporte soit des clés "L1..L5", soit des ids candidats (ex: 'L1') identiques
+        const l1 = parseInt(voix.L1 ?? voix['L1'] ?? obj.L1_Voix ?? obj.L1 ?? 0) || 0;
+        const l2 = parseInt(voix.L2 ?? voix['L2'] ?? obj.L2_Voix ?? obj.L2 ?? 0) || 0;
+        const l3 = parseInt(voix.L3 ?? voix['L3'] ?? obj.L3_Voix ?? obj.L3 ?? 0) || 0;
+        const l4 = parseInt(voix.L4 ?? voix['L4'] ?? obj.L4_Voix ?? obj.L4 ?? 0) || 0;
+        const l5 = parseInt(voix.L5 ?? voix['L5'] ?? obj.L5_Voix ?? obj.L5 ?? 0) || 0;
+
+        return [
+          obj.bureauId ?? '',                 // A BureauID
+          parseInt(obj.inscrits) || 0,         // B Inscrits
+          parseInt(obj.votants) || 0,          // C Votants
+          parseInt(obj.blancs) || 0,           // D Blancs
+          parseInt(obj.nuls) || 0,             // E Nuls
+          parseInt(obj.exprimes) || 0,          // F Exprimes
+          l1,                                  // G L1_Voix
+          l2,                                  // H L2_Voix
+          l3,                                  // I L3_Voix
+          l4,                                  // J L4_Voix
+          l5,                                  // K L5_Voix
+          obj.saisiPar ?? '',                  // L SaisiPar
+          obj.validePar ?? '',                 // M ValidePar
+          obj.timestamp ?? ''                  // N Timestamp
+        ];
+      }
+
+      default:
+        return Object.values(obj);
+    }
+  }
+
   async appendRow(sheetName, rowData) {
-    const row = Array.isArray(rowData) ? rowData : Object.values(rowData || {});
+    const row = this._toRow(normalizedSheet, rowData);
     return await this.appendRows(sheetName, [row]);
   }
 
   async updateRow(sheetName, rowIndex, rowData) {
     const normalizedSheet = this.normalizeSheetName(sheetName);
-    const row = Array.isArray(rowData) ? rowData : Object.values(rowData || {});
+    const row = this._toRow(normalizedSheet, rowData);
     const sheetRow = Number(rowIndex) + 2;
     const lastCol = this.colIndexToA1(Math.max(0, row.length - 1));
     const a1 = this.a1(normalizedSheet, `A${sheetRow}:${lastCol}${sheetRow}`);
@@ -329,7 +386,7 @@ async sleep(ms) {
     const updates = rows.map((r) => {
       const rowIndex = r.rowIndex ?? r.index ?? 0;
       const rowData = r.rowData ?? r.data ?? [];
-      const row = Array.isArray(rowData) ? rowData : Object.values(rowData || {});
+      const row = this._toRow(normalizedSheet, rowData);
       const sheetRow = Number(rowIndex) + 2;
       const lastCol = this.colIndexToA1(Math.max(0, row.length - 1));
       const rangeA1 = this.a1(sheetName, `A${sheetRow}:${lastCol}${sheetRow}`);
@@ -418,6 +475,14 @@ async sleep(ms) {
    */
   async logAudit(action, entity, entityId, before = {}, after = {}) {
     const ts = new Date().toISOString();
+
+    const normalizeCell = (v) => {
+      if (v === null || v === undefined) return "";
+      if (typeof v === "object") {
+        try { return JSON.stringify(v); } catch { return String(v); }
+      }
+      return v;
+    };
     const beforeJson = JSON.stringify(before ?? {});
     const afterJson = JSON.stringify(after ?? {});
     const userEmail = (authService.getUserEmail?.() || authService.getUser?.()?.email || '') || '';
