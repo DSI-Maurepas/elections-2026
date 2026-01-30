@@ -80,7 +80,10 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
   return (
     <nav className="main-navigation" aria-label="Navigation principale">
       <div className="nav-header">
-        <h1 className="app-title">Élections Municipales 2026</h1>
+        <h1 className="app-title" aria-label="Élections Municipales 2026">
+          <span className="app-title-main">Élections Municipales</span>
+          <span className="app-title-year">2026</span>
+        </h1>
 
         <div className="nav-header-right">
           <div className="election-status" role="status" aria-live="polite">

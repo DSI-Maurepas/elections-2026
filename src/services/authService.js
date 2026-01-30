@@ -3,6 +3,13 @@
 
 import { GOOGLE_SHEETS, LOCAL_STORAGE_KEYS } from '../utils/constants';
 
+// --- Auth Admin (mot de passe local) ---
+// NOTE: Auth "Administration" volontairement locale (pas Google OAuth). Usage interne jour J.
+// Stockage: localStorage (session persistante dans le navigateur).
+const ADMIN_STORAGE_KEY = 'elections_admin_auth_v1';
+const ADMIN_PASSWORD = 'Elections@M0rep@$';
+
+
 class AuthService {
   constructor() {
     this.clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -179,6 +186,46 @@ signOut() {
   /**
    * Récupère l'email de l'utilisateur
    */
+
+  // =========================
+  // Auth Administration (mot de passe)
+  // =========================
+
+  /**
+   * Connecte l'utilisateur à l'espace Administration via mot de passe.
+   * @param {string} password
+   * @returns {boolean} true si OK
+   */
+  adminSignIn(password) {
+    const ok = typeof password === 'string' && password === ADMIN_PASSWORD;
+    if (ok) {
+      localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify({ ok: true, ts: Date.now() }));
+    }
+    return ok;
+  }
+
+  /**
+   * Déconnecte l'utilisateur de l'espace Administration.
+   */
+  adminSignOut() {
+    localStorage.removeItem(ADMIN_STORAGE_KEY);
+  }
+
+  /**
+   * Indique si l'utilisateur est connecté à l'espace Administration.
+   * @returns {boolean}
+   */
+  isAdminSignedIn() {
+    try {
+      const raw = localStorage.getItem(ADMIN_STORAGE_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      return !!parsed?.ok;
+    } catch {
+      return false;
+    }
+  }
+
   getUserEmail() {
     return localStorage.getItem(LOCAL_STORAGE_KEYS.USER_EMAIL) || 'utilisateur@inconnu.com';
   }

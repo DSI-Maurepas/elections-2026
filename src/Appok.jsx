@@ -1,9 +1,6 @@
 // src/App.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import authService from "./services/authService";
-import googleSheetsService from "./services/googleSheetsService";
-import auditService from "./services/auditService";
-import { useElectionState } from "./hooks/useElectionState";
 
 import Navigation from "./components/layout/Navigation";
 import Footer from "./components/layout/Footer";
@@ -41,9 +38,6 @@ function App() {
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState(null);
-
-  // État global élection (pour afficher / rafraîchir dans Administration)
-  const { state: electionState, loadState } = useElectionState();
 
   // Optionnel : si authService persiste le token, on le relit au montage
   useEffect(() => {
@@ -106,13 +100,6 @@ function App() {
     }
   }, [currentPage, isAuthenticated, isAdminAuthenticated]);
 
-  // Quand on est en admin et authentifié, on recharge l'état élection (pour afficher le tour courant)
-  useEffect(() => {
-    if (currentPage === "admin" && isAuthenticated && isAdminAuthenticated) {
-      loadState?.();
-    }
-  }, [currentPage, isAuthenticated, isAdminAuthenticated, loadState]);
-
   const handleAdminLogin = (evt) => {
     evt?.preventDefault?.();
     const ok = authService.adminSignIn(adminPassword);
@@ -130,96 +117,6 @@ function App() {
     authService.adminSignOut();
     setIsAdminAuthenticated(false);
     setAdminModalOpen(true);
-  };
-
-  // 🔄 Retour au 1er tour (admin uniquement) — non destructif (ne purge pas les feuilles T2)
-  const handleRetourPremierTour = async () => {
-    if (!isAuthenticated || !isAdminAuthenticated) return;
-
-    const confirm1 = window.confirm(
-      "Revenir au 1er tour ?\n\nCette action réinitialise l'état global (tour actuel, verrous, candidats qualifiés).\n\nAucune feuille (résultats/participation) ne sera effacée."
-    );
-    if (!confirm1) return;
-
-    const confirm2 = window.confirm(
-      "Confirmation finale :\n\n- tourActuel -> 1\n- passage T2 -> Inactif\n- verrous T1/T2 -> levés\n- candidats qualifiés -> vidés\n\nContinuer ?"
-    );
-    if (!confirm2) return;
-
-    try {
-      await googleSheetsService.updateElectionState({
-        tourActuel: 1,
-        tour1Verrouille: false,
-        tour2Verrouille: false,
-        secondTourEnabled: false,
-        candidatsQualifies: ""
-      });
-
-      // Audit non bloquant
-      try {
-        await auditService.log("RETOUR_T1", {
-          from: {
-            tourActuel: electionState?.tourActuel ?? null,
-            secondTourEnabled: electionState?.secondTourEnabled ?? null
-          }
-        });
-      } catch (e) {
-        console.warn("Audit RETOUR_T1 échoué:", e);
-      }
-
-      await loadState?.();
-      alert("✅ Retour au 1er tour effectué.");
-    } catch (e) {
-      console.error("Erreur RETOUR_T1:", e);
-      alert(`Erreur : ${e?.message || "Erreur inconnue"}`);
-    }
-  };
-
-  const styles = {
-    smallBtn: {
-      padding: "0.32rem 0.6rem",
-      borderRadius: 10,
-      fontWeight: 900,
-      fontSize: 13,
-      lineHeight: 1.1,
-      boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
-      border: "1px solid rgba(0,0,0,0.10)",
-      whiteSpace: "nowrap",
-      minHeight: 34
-    },
-    btnDanger: {
-      background: "rgba(220, 38, 38, 0.14)",
-      border: "1px solid rgba(220, 38, 38, 0.55)"
-    },
-    btnSuccess: {
-      background: "rgba(34, 197, 94, 0.14)",
-      border: "1px solid rgba(34, 197, 94, 0.55)"
-    },
-    btnWarning: {
-      background: "rgba(245, 158, 11, 0.14)",
-      border: "1px solid rgba(245, 158, 11, 0.55)"
-    },
-    sectionCard: {
-      marginBottom: "1rem",
-      padding: "1rem",
-      borderRadius: 14,
-      boxShadow: "0 10px 26px rgba(0,0,0,0.08)",
-      border: "1px solid rgba(0,0,0,0.06)"
-    },
-    chip: (tone) => {
-      const base = {
-        padding: "0.25rem 0.6rem",
-        borderRadius: 999,
-        fontWeight: 900,
-        fontSize: 13,
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6
-      };
-      if (tone === "green") return { ...base, background: "rgba(34, 197, 94, 0.12)", border: "1px solid rgba(34, 197, 94, 0.40)" };
-      if (tone === "red") return { ...base, background: "rgba(220, 38, 38, 0.12)", border: "1px solid rgba(220, 38, 38, 0.40)" };
-      return { ...base, background: "rgba(0,0,0,0.05)", border: "1px solid rgba(0,0,0,0.08)" };
-    }
   };
 
   const renderAdminModal = () => {
@@ -240,6 +137,7 @@ function App() {
           padding: '1rem'
         }}
         onClick={() => {
+          // clic backdrop = fermeture + retour dashboard (évite un admin semi-ouvert)
           setAdminModalOpen(false);
           setCurrentPage('dashboard');
         }}
@@ -251,7 +149,7 @@ function App() {
         >
           <h2 style={{ marginTop: 0 }}>⚙️ Accès Administration</h2>
           <p style={{ marginTop: 0 }}>
-            Saisissez le mot de passe pour accéder aux fonctions d'administration.
+            Saisissez le mot de passe pour accéder aux fonctions d'administration (dont le déverrouillage du passage T2).
           </p>
 
           {adminError && (
@@ -285,7 +183,6 @@ function App() {
             <button
               type="button"
               className="action-btn"
-              style={styles.smallBtn}
               onClick={() => {
                 setAdminModalOpen(false);
                 setCurrentPage('dashboard');
@@ -293,13 +190,8 @@ function App() {
             >
               Annuler
             </button>
-            <button
-              type="button"
-              className="action-btn"
-              style={{ ...styles.smallBtn, ...styles.btnSuccess }}
-              onClick={handleAdminLogin}
-            >
-              Connexion
+            <button type="button" className="action-btn primary" onClick={handleAdminLogin}>
+              Se connecter
             </button>
           </div>
         </div>
@@ -320,98 +212,6 @@ function App() {
         </button>
       </div>
     </div>
-  );
-
-  const renderAdminResetBlock = () => {
-    if (!isAdminAuthenticated) return null;
-
-    const tourActuel = electionState?.tourActuel ?? 1;
-    const secondTourEnabled = Boolean(electionState?.secondTourEnabled);
-
-    return (
-      <div className="card" style={styles.sectionCard}>
-        <h3 style={{ marginTop: 0 }}>🔄 Retour au 1er tour</h3>
-
-        <p style={{ marginTop: 0 }}>
-          Retour en mode <strong>Premier tour</strong> (tests / préparation du scrutin). Action <strong>non destructive</strong>.
-        </p>
-
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", margin: "0.75rem 0" }}>
-          <span style={styles.chip("red")}>
-            Tour actuel : <strong>{tourActuel}</strong>
-          </span>
-          <span style={styles.chip(secondTourEnabled ? "green" : "red")}>
-            Passage T2 : <strong>{secondTourEnabled ? "Actif" : "Inactif"}</strong>
-          </span>
-        </div>
-
-        <div className="message warning" style={{ margin: "0.75rem 0" }}>
-          ⚠️ Action sensible. Double confirmation requise.
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button
-            type="button"
-            className="action-btn"
-            style={{ ...styles.smallBtn, ...styles.btnWarning }}
-            disabled={tourActuel === 1 && !secondTourEnabled}
-            onClick={handleRetourPremierTour}
-            title={tourActuel === 1 && !secondTourEnabled ? "Déjà en mode 1er tour" : "Revenir au 1er tour"}
-          >
-            Retour T1
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  // Wrapper visuel sans rajouter de titres (évite les doublons avec les composants internes)
-  const CardSection = ({ children }) => (
-    <div className="card" style={styles.sectionCard}>
-      {children}
-    </div>
-  );
-
-  const renderAdminTablesStyle = () => (
-    <style>{`
-      /* ====== TABLES ADMIN: lisibilité + arrondis + zébrage ====== */
-      .admin-table, .audit-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
-        overflow: hidden;
-        border-radius: 14px;
-        border: 1px solid rgba(0,0,0,0.08);
-      }
-      .admin-table thead th, .audit-table thead th {
-        background: rgba(156, 163, 175, 0.95); /* gris clair */
-        color: #fff; /* police blanche */
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        font-size: 12px;
-        padding: 10px 12px;
-        border-bottom: 1px solid rgba(0,0,0,0.10);
-      }
-      .admin-table tbody td, .audit-table tbody td {
-        padding: 10px 12px;
-        border-bottom: 1px solid rgba(0,0,0,0.06);
-        vertical-align: top;
-      }
-      .admin-table tbody tr:nth-child(even),
-      .audit-table tbody tr:nth-child(even) {
-        background: rgba(0,0,0,0.03); /* 1 ligne sur 2 contrastée */
-      }
-      .admin-table tbody tr:last-child td,
-      .audit-table tbody tr:last-child td {
-        border-bottom: none;
-      }
-
-      /* conteneurs éventuels */
-      .audit-table-container {
-        overflow-x: auto;
-      }
-    `}</style>
   );
 
   const renderPage = () => {
@@ -472,19 +272,12 @@ function App() {
         return (
           <div className="page-container">
             {renderAdminModal()}
-            {renderAdminTablesStyle()}
-
-            <div className="card" style={styles.sectionCard}>
+            <div className="card" style={{ marginBottom: "1rem", padding: "1rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
                 <h2 style={{ margin: 0 }}>⚙️ Administration</h2>
                 {isAdminAuthenticated && (
-                  <button
-                    type="button"
-                    className="action-btn"
-                    style={{ ...styles.smallBtn, ...styles.btnDanger }}
-                    onClick={handleAdminLogout}
-                  >
-                    Déconnexion
+                  <button type="button" className="action-btn" onClick={handleAdminLogout}>
+                    Déconnexion admin
                   </button>
                 )}
               </div>
@@ -492,22 +285,11 @@ function App() {
                 Accès protégé par mot de passe. Les actions ici impactent l’état officiel (Sheets) et doivent être tracées.
               </p>
             </div>
-
             {isAdminAuthenticated ? (
               <>
-                {renderAdminResetBlock()}
-
-                <CardSection>
-                  <ConfigBureaux />
-                </CardSection>
-
-                <CardSection>
-                  <ConfigCandidats />
-                </CardSection>
-
-                <CardSection>
-                  <AuditLog />
-                </CardSection>
+                <ConfigBureaux />
+                <ConfigCandidats />
+                <AuditLog />
               </>
             ) : null}
           </div>

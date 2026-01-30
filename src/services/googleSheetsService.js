@@ -62,7 +62,6 @@ class GoogleSheetsService {
     return `'${safe}'!${range}`;
   }
 
-  
   /**
    * Normalise les noms d'onglets pour éviter les régressions (accents/variantes).
    * Ex: "Résultats_T1" -> "Resultats_T1"
@@ -82,7 +81,7 @@ class GoogleSheetsService {
     return mapped;
   }
 
-async sleep(ms) {
+  async sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
@@ -237,17 +236,41 @@ async sleep(ms) {
           actif: row[7] === 'TRUE' || row[7] === true
         }));
 
-      case 'Candidats':
-        return rows.map(row => ({
-          listeId: row[0] || '',
-          nomListe: row[1] || '',
-          teteListeNom: row[2] || '',
-          teteListePrenom: row[3] || '',
-          couleur: row[4] || '#0055A4',
-          ordre: parseInt(row[5]) || 0,
-          actifT1: row[6] === 'TRUE' || row[6] === true,
-          actifT2: row[7] === 'TRUE' || row[7] === true
-        }));
+      case 'Candidats': {
+        /**
+         * IMPORTANT (compatibilité "Passage au 2nd tour"):
+         * - Le composant PassageSecondTour.jsx attend des champs: candidat.id et candidat.nom
+         * - Or l'application admin utilise: listeId / nomListe / ...
+         * => On conserve tous les champs existants ET on ajoute des alias non destructifs:
+         *    id = listeId (ex: L1..L5)
+         *    nom = nomListe (nom lisible de la liste)
+         */
+        return rows.map(row => {
+          const listeId = row[0] || '';
+          const nomListe = row[1] || '';
+          const teteListeNom = row[2] || '';
+          const teteListePrenom = row[3] || '';
+
+          // "nom" doit être parlant dans les tableaux de résultats. On privilégie nomListe, sinon "Nom Prénom".
+          const nomFallback = [teteListeNom, teteListePrenom].filter(Boolean).join(' ').trim();
+
+          return {
+            // Champs existants (NE PAS MODIFIER)
+            listeId,
+            nomListe,
+            teteListeNom,
+            teteListePrenom,
+            couleur: row[4] || '#0055A4',
+            ordre: parseInt(row[5]) || 0,
+            actifT1: row[6] === 'TRUE' || row[6] === true,
+            actifT2: row[7] === 'TRUE' || row[7] === true,
+
+            // Alias de compatibilité (ajout, non destructif)
+            id: listeId,
+            nom: nomListe || nomFallback || listeId
+          };
+        });
+      }
 
       case 'Participation_T1':
       case 'Participation_T2':
@@ -303,7 +326,8 @@ async sleep(ms) {
             timestamp: row[13] || ''
           };
         });
-default:
+
+      default:
         // Par défaut, retourner les lignes brutes
         return rows;
     }
@@ -322,21 +346,20 @@ default:
       const rows = values.slice();
       const header = rows.length > 0 ? rows[0] : [];
       if (rows.length > 0) rows.shift(); // remove header
-      
+
       // Transformer les lignes en objets selon le sheetName
       const transformed = this._transformRows(normalizedSheet, rows, header);
-      
+
       // IMPORTANT : Ajouter rowIndex à chaque objet pour permettre update/delete
       const withRowIndex = transformed.map((obj, index) => ({
         ...obj,
         rowIndex: index
       }));
-      
+
       this._setCached(key, withRowIndex);
       return withRowIndex;
     });
   }
-
 
   /**
    * Convertit un objet métier en ligne (Array) dans l'ordre exact des colonnes Google Sheets.
@@ -403,8 +426,9 @@ default:
   }
 
   async appendRow(sheetName, rowData) {
-    const row = this._toRow(normalizedSheet, rowData);
-    return await this.appendRows(sheetName, [row]);
+    // NOTE: conserve la signature existante (appelée par useGoogleSheets)
+    // et délègue à appendRows (normalisation faite dans appendRows).
+    return await this.appendRows(sheetName, [this._toRow(this.normalizeSheetName(sheetName), rowData)]);
   }
 
   async updateRow(sheetName, rowIndex, rowData) {
@@ -449,7 +473,7 @@ default:
     const updates = rows.map((r) => {
       const rowIndex = r.rowIndex ?? r.index ?? 0;
       const rowData = r.rowData ?? r.data ?? [];
-      const row = this._toRow(normalizedSheet, rowData);
+      const row = this._toRow(sheetName, rowData);
       const sheetRow = Number(rowIndex) + 2;
       const lastCol = this.colIndexToA1(Math.max(0, row.length - 1));
       const rangeA1 = this.a1(sheetName, `A${sheetRow}:${lastCol}${sheetRow}`);
@@ -528,7 +552,6 @@ default:
     });
   }
 
-  
   // ==================== AUDIT / ERREURS ====================
 
   /**
@@ -539,13 +562,6 @@ default:
   async logAudit(action, entity, entityId, before = {}, after = {}) {
     const ts = new Date().toISOString();
 
-    const normalizeCell = (v) => {
-      if (v === null || v === undefined) return "";
-      if (typeof v === "object") {
-        try { return JSON.stringify(v); } catch { return String(v); }
-      }
-      return v;
-    };
     const beforeJson = JSON.stringify(before ?? {});
     const afterJson = JSON.stringify(after ?? {});
     const userEmail = (authService.getUserEmail?.() || authService.getUser?.()?.email || '') || '';
@@ -582,8 +598,7 @@ default:
     ]]);
   }
 
-
-// ==================== UTILITAIRES ====================
+  // ==================== UTILITAIRES ====================
 
   async appendRows(sheetName, rows) {
     const normalizedSheet = this.normalizeSheetName(sheetName);

@@ -5,6 +5,7 @@
 import { generateFilename, formatDateTime, formatNumber, formatPercent } from '../utils/formatters';
 import { ELECTION_CONFIG, SHEET_NAMES } from '../utils/constants';
 import auditService from './auditService';
+import * as XLSX from 'xlsx';
 import googleSheetsService from './googleSheetsService';
 
 class ExportService {
@@ -91,17 +92,28 @@ class ExportService {
   }
 
   /**
-   * Exporte les données en CSV (compatible Excel)
+   * Exporte les données en XLSX (Excel)
+   * NOTE: on conserve le nom historique exportToCSV pour éviter de casser l'UI,
+   * mais la sortie est bien un .xlsx.
    */
   exportToCSV(data, filename) {
     try {
-      const csvContent = this.arrayToCSV(data);
-      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-      this.downloadBlob(blob, filename);
-      
-      auditService.logExport('CSV', filename, { rows: data.length });
+      const safeFilename = (filename || 'export.xlsx').replace(/\.csv$/i, '.xlsx');
+
+      const rows = Array.isArray(data) ? data : [];
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Export');
+
+      const arrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([arrayBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      this.downloadBlob(blob, safeFilename);
+
+      auditService.logExport('XLSX', safeFilename, { rows: rows.length });
     } catch (error) {
-      console.error('Erreur export CSV:', error);
+      console.error('Erreur export XLSX:', error);
       throw error;
     }
   }
@@ -131,24 +143,71 @@ class ExportService {
    * Exporte la participation en CSV
    */
   async exportParticipationCSV(participation, tour = 1) {
-    const data = participation.map(p => {
-      // Calculer le taux si absent
-      const tauxPct = p.tauxPct !== undefined 
-        ? p.tauxPct 
-        : (p.inscrits > 0 ? (p.votants / p.inscrits) * 100 : 0);
-      
+    // PV Participation : structure figée 09h -> 20h (Jour J)
+    const HOURS = ['09h','10h','11h','12h','13h','14h','15h','16h','17h','18h','19h','20h'];
+
+    const getNumeric = (v) => {
+      const n = Number(String(v ?? '').replace(/\s/g, '').replace(',', '.'));
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const getVotantsForHour = (obj, hourLabel) => {
+      // Supporte plusieurs schémas:
+      // 1) normalisé: votants09h / votants20h
+      // 2) headers Sheets: Votants09h / Votants20h
+      // 3) schéma "déjà consolidé": votants (si heure déjà définie)
+      const hh = String(hourLabel || '').replace(/h/i, '').padStart(2, '0');
+      const keyNorm = `votants${hh}h`;     // ex: votants09h
+      const keySheet = `Votants${hh}h`;    // ex: Votants09h
+      if (obj && Object.prototype.hasOwnProperty.call(obj, keyNorm)) return getNumeric(obj[keyNorm]);
+      if (obj && Object.prototype.hasOwnProperty.call(obj, keySheet)) return getNumeric(obj[keySheet]);
+      return 0;
+    };
+
+    const getLastHour = (obj) => {
+      // Si une heure explicite existe déjà (consolidation UI), on la respecte
+      const explicit = obj?.heure || obj?.Heure;
+      if (explicit && HOURS.includes(String(explicit))) return String(explicit);
+
+      // Sinon, on prend la dernière heure avec une valeur > 0
+      let last = '';
+      for (const h of HOURS) {
+        const v = getVotantsForHour(obj, h);
+        if (v > 0) last = h;
+      }
+      return last;
+    };
+
+    const getVotants = (obj) => {
+      // Si déjà calculé
+      if (obj?.votants !== undefined) return getNumeric(obj.votants);
+      if (obj?.Votants !== undefined) return getNumeric(obj.Votants);
+
+      const h = getLastHour(obj);
+      return h ? getVotantsForHour(obj, h) : 0;
+    };
+
+    const data = (Array.isArray(participation) ? participation : []).map((p) => {
+      const bureau = p?.bureauId || p?.BureauID || p?.Bureau || p?.bureau || '';
+      const inscrits = getNumeric(p?.inscrits ?? p?.Inscrits);
+      const heure = getLastHour(p);
+      const votants = getVotants(p);
+
+      // Taux en pourcentage, gardes-fous anti-NaN
+      const tauxPct = inscrits > 0 ? (votants / inscrits) * 100 : 0;
+
       return {
-        'Bureau': p.bureauId || '',
-        'Heure': p.heure || '',
-        'Inscrits': p.inscrits || 0,
-        'Votants': p.votants || 0,
-        'Taux (%)': tauxPct.toFixed(2),
-        'Saisi par': p.saisiPar || '',
-        'Timestamp': formatDateTime(p.timestamp || new Date().toISOString())
+        'Bureau': bureau,
+        'Heure': heure,
+        'Inscrits': inscrits,
+        'Votants': votants,
+        'Taux (%)': formatPercent(tauxPct / 100, 2), // formatPercent attend une valeur 0..1
+        'Saisi par': p?.saisiPar || p?.SaisiPar || p?.user || '',
+        'Timestamp': formatDateTime(p?.timestamp || p?.Timestamp || new Date().toISOString()),
       };
     });
 
-    const filename = generateFilename(`participation_tour${tour}`, 'csv');
+    const filename = generateFilename(`participation_tour${tour}`, 'xlsx');
     this.exportToCSV(data, filename);
   }
 
@@ -220,16 +279,35 @@ class ExportService {
    * Exporte le journal d'audit en CSV
    */
   async exportAuditCSV(auditData) {
-    const data = auditData.map(a => ({
-      'Date': formatDateTime(a.timestamp || a.date),
-      'Action': a.action || '',
-      'Utilisateur': a.user || a.saisiPar || '',
-      'Cible': a.target || a.bureauId || '',
-      'Détails': a.details || '',
-      'Sévérité': a.severity || 'INFO'
-    }));
+    const asText = (v) => {
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'string') return v;
+      try { return JSON.stringify(v); } catch { return String(v); }
+    };
 
-    const filename = generateFilename('audit_log', 'csv');
+    // Tolérance maximale : on accepte plusieurs schémas (ancien/nouveau)
+    const data = (auditData || []).map((a) => {
+      const timestamp = a.timestamp ?? a.date ?? a.createdAt ?? a.time;
+      const user = a.user ?? a.saisiPar ?? a.username ?? a.actor ?? '';
+      const action = a.action ?? a.event ?? a.type ?? a.operation ?? '';
+      const target = a.target ?? a.bureauId ?? a.bureau ?? a.entityId ?? '';
+      const severity = a.severity ?? a.level ?? a.status ?? 'INFO';
+      const details = a.details ?? a.detail ?? a.payload ?? a.data;
+
+      // Si l'ancienne structure donne un export "vide", on met tout dans Détails
+      const fallbackDetails = (!action && !user && !target) ? a : details;
+
+      return {
+        'Date': formatDateTime(timestamp),
+        'Action': asText(action),
+        'Utilisateur': asText(user),
+        'Cible': asText(target),
+        'Détails': asText(fallbackDetails),
+        'Sévérité': asText(severity)
+      };
+    });
+
+    const filename = generateFilename('audit_log', 'xlsx');
     this.exportToCSV(data, filename);
   }
 
@@ -238,7 +316,7 @@ class ExportService {
    */
   async exportCompletCSV(tour = 1) {
     try {
-      // Créer un ZIP avec tous les exports
+      // ✅ Export complet : un seul fichier XLSX (plusieurs onglets)
       const bureaux = await googleSheetsService.getData(SHEET_NAMES.BUREAUX);
       const candidats = await googleSheetsService.getData(SHEET_NAMES.CANDIDATS);
       
@@ -248,9 +326,16 @@ class ExportService {
       const sheetNameResultats = tour === 1 ? SHEET_NAMES.RESULTATS_T1 : SHEET_NAMES.RESULTATS_T2;
       const resultats = await googleSheetsService.getData(sheetNameResultats);
       
-      // Export de chaque type
-      await this.exportParticipationCSV(participation, tour);
-      await this.exportResultatsCSV(resultats, candidats, tour);
+      // Préparer les données (onglets)
+      const wb = XLSX.utils.book_new();
+
+      // 1) Participation (Tour)
+      const partSheetRows = this._buildParticipationRows(participation, bureaux, tour);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(partSheetRows), `Participation T${tour}`);
+
+      // 2) Résultats (Tour)
+      const resSheetRows = this._buildResultatsRows(resultats, candidats, tour);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resSheetRows), `Résultats T${tour}`);
       
       // Exporter les bureaux
       const bureauxData = bureaux.map(b => ({
@@ -260,8 +345,7 @@ class ExportService {
         'Inscrits': b.inscrits,
         'Actif': b.actif ? 'Oui' : 'Non'
       }));
-      const filenameBureaux = generateFilename(`bureaux_tour${tour}`, 'csv');
-      this.exportToCSV(bureauxData, filenameBureaux);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bureauxData), 'Bureaux');
       
       // Exporter les candidats
       const candidatsData = candidats.map(c => ({
@@ -272,15 +356,175 @@ class ExportService {
         'Actif T1': c.actifT1 ? 'Oui' : 'Non',
         'Actif T2': c.actifT2 ? 'Oui' : 'Non'
       }));
-      const filenameCandidats = generateFilename(`candidats_tour${tour}`, 'csv');
-      this.exportToCSV(candidatsData, filenameCandidats);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(candidatsData), 'Candidats');
+
+      // 5) Audit (si dispo)
+      try {
+        const auditData = auditService?.getAllLogs ? auditService.getAllLogs() : [];
+        if (Array.isArray(auditData) && auditData.length) {
+          const auditRows = auditData.map(a => ({
+            'Date': formatDateTime(a.timestamp || a.date),
+            'Action': a.action || '',
+            'Utilisateur': a.user || a.saisiPar || '',
+            'Cible': a.target || a.bureauId || '',
+            'Détails': typeof a.details === 'object' ? JSON.stringify(a.details) : (a.details || ''),
+            'Sévérité': a.severity || 'INFO'
+          }));
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(auditRows), 'Audit');
+        }
+      } catch (_) {
+        // pas bloquant
+      }
+
+      // Télécharger
+      const filename = generateFilename(`export_complet_tour${tour}`, 'xlsx');
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       
-      alert('Export complet : 4 fichiers CSV téléchargés (Bureaux, Candidats, Participation, Résultats)');
+      alert('Export complet : 1 fichier XLSX téléchargé (onglets Bureaux, Candidats, Participation, Résultats, Audit)');
       
     } catch (error) {
       console.error('Erreur export complet:', error);
       throw error;
     }
+  }
+
+  /**
+   * Construit les lignes "Participation" pour XLSX (09h -> 20h)
+   * @priva  _buildParticipationRows(participation, bureaux = [], tour = 1) {
+    // Gel Jour J : heures fixes 09h -> 20h (08h supprimé)
+    const HOURS = ['09h','10h','11h','12h','13h','14h','15h','16h','17h','18h','19h','20h'];
+
+    const toNum = (v) => {
+      const s = String(v ?? '').replace(/\u202F/g, '').replace(/\u00A0/g, '').replace(/\s/g, '').replace(',', '.');
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const getVotants = (p, hourLabel) => {
+      // Supporte les 2 schémas : normalisé (votants09h) et headers Sheets (Votants09h)
+      const hh = String(hourLabel).replace(/h/i, '').padStart(2, '0');
+      const k1 = `votants${hh}h`;
+      const k2 = `Votants${hh}h`;
+      if (p && Object.prototype.hasOwnProperty.call(p, k1)) return toNum(p[k1]);
+      if (p && Object.prototype.hasOwnProperty.call(p, k2)) return toNum(p[k2]);
+      // Cas legacy (déjà "09h": valeur)
+      if (p && Object.prototype.hasOwnProperty.call(p, hourLabel)) return toNum(p[hourLabel]);
+      return 0;
+    };
+
+    const bureauxById = new Map((Array.isArray(bureaux) ? bureaux : []).map((b) => [b?.id ?? b?.ID ?? b?.bureauId ?? b?.BureauID, b]));
+
+    return (Array.isArray(participation) ? participation : []).map((p) => {
+      const bureauId = p?.bureauId ?? p?.BureauID ?? p?.Bureau ?? p?.bureau ?? '';
+      const b = bureauxById.get(bureauId) || null;
+
+      const inscrits = toNum(p?.inscrits ?? p?.Inscrits ?? b?.inscrits);
+
+      const row = {
+        'Bureau': bureauId,
+        'Nom bureau': p?.bureauNom ?? p?.nom ?? b?.nom ?? '',
+        'Inscrits': inscrits,
+      };
+
+      // Colonnes horaires (votants cumulés)
+      for (const h of HOURS) {
+        row[h] = getVotants(p, h);
+      }
+
+      // Dernier état = dernière heure renseignée (pas forcément 20h)
+      let lastHour = '';
+      let lastVotants = 0;
+      for (const h of HOURS) {
+        const v = getVotants(p, h);
+        if (v > 0) {
+          lastHour = h;
+          lastVotants = v;
+        }
+      }
+      // fallback: 20h (structure figée)
+      if (!lastHour) {
+        lastHour = '20h';
+        lastVotants = getVotants(p, '20h');
+      }
+
+      row['Dernier état (heure)'] = lastHour;
+      row['Dernier état (votants)'] = lastVotants;
+      row['Taux dernier état'] = inscrits > 0 ? formatPercent(lastVotants / inscrits, 2) : formatPercent(0, 2);
+
+      return row;
+    });
+  }
+
+
+  _buildResultatsRows(resultats, candidats, tour = 1) {
+    const toNum = (v) => {
+      const s = String(v ?? '').replace(/\u202F/g, '').replace(/\u00A0/g, '').replace(/\s/g, '').replace(',', '.');
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const cands = Array.isArray(candidats) ? candidats : [];
+
+    // Détecter le format "par bureau" (avec voix objet) vs "flat"
+    const isPerBureau = Array.isArray(resultats) && resultats.some(r => r && (typeof r.voix === 'object' || r.voixParCandidat || r.VoixParCandidat));
+
+    if (isPerBureau) {
+      return (Array.isArray(resultats) ? resultats : []).map((r) => {
+        const row = {
+          'Bureau': r?.bureauId ?? r?.BureauID ?? r?.Bureau ?? r?.bureau ?? '',
+          'Inscrits': toNum(r?.inscrits ?? r?.Inscrits),
+          'Votants': toNum(r?.votants ?? r?.Votants),
+          'Blancs': toNum(r?.blancs ?? r?.Blancs),
+          'Nuls': toNum(r?.nuls ?? r?.Nuls),
+          'Exprimés': toNum(r?.exprimes ?? r?.Exprimes),
+          'Saisi par': r?.saisiPar ?? r?.SaisiPar ?? '',
+          'Validé par': r?.validePar ?? r?.ValidePar ?? '',
+          'Horodatage': formatDateTime(r?.timestamp ?? r?.Timestamp ?? r?.date ?? new Date().toISOString()),
+        };
+
+        const voixMap = r?.voix || r?.voixParCandidat || r?.VoixParCandidat || {};
+        // Colonnes par candidat : on utilise le nom de liste (plus lisible) et on garde l'ID en préfixe
+        for (const c of cands) {
+          const id = c?.listeId ?? c?.ListeID ?? c?.id;
+          const label = c?.nomListe ?? c?.NomListe ?? id;
+          const col = `${id} — ${label}`;
+          row[col] = toNum(voixMap?.[id] ?? voixMap?.[label] ?? r?.[id] ?? r?.[label] ?? 0);
+        }
+
+        return row;
+      });
+    }
+
+    // Format "flat" (une ligne = une liste/candidat)
+    return (Array.isArray(resultats) ? resultats : []).map((r) => {
+      const id = r?.listeId ?? r?.ListeID ?? '';
+      const cand = cands.find(c => (c?.listeId ?? c?.ListeID) === id);
+      const label = cand ? cand.nomListe : (r?.liste ?? r?.Liste ?? id);
+
+      return {
+        'ListeID': id,
+        'Liste': label,
+        'Voix': toNum(r?.voix ?? r?.Voix),
+        'Pourcentage': (r?.pourcentage !== undefined || r?.Pourcentage !== undefined)
+          ? formatPercent(toNum(r?.pourcentage ?? r?.Pourcentage), 2)
+          : '',
+        'Bureau': r?.bureauId ?? r?.BureauID ?? r?.Bureau ?? r?.bureau ?? '',
+        'Horodatage': formatDateTime(r?.timestamp ?? r?.Timestamp ?? r?.date ?? new Date().toISOString()),
+      };
+    });
+  }
+});
   }
 
   /**
@@ -746,6 +990,151 @@ class ExportService {
 </html>
     `;
   }
+
+
+  // ---------------------------------------------------------------------------
+  // Helpers export XLSX (structure figée Jour J) — Participation & Résultats
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Heures figées pour le scrutin (Jour J) : 09h → 20h
+   * (08h volontairement exclu)
+   */
+  _getFixedHours() {
+    return ['09h','10h','11h','12h','13h','14h','15h','16h','17h','18h','19h','20h'];
+  }
+
+  /**
+   * Lecture robuste d'une valeur de votants pour une heure donnée.
+   * Supporte plusieurs schémas :
+   * - normalisé : votants09h
+   * - en-tête brut : Votants09h
+   * - map : votants['09h'] / votantsParHeure['09h']
+   * - clé directe : '09h'
+   */
+  _getVotantsAtHour(obj, hourLabel) {
+    if (!obj) return 0;
+    const hh = String(hourLabel || '').replace('h', '');
+    const keyNorm = `votants${hh}h`;      // votants09h
+    const keyNorm2 = `votants${hh}`;      // votants09 (au cas où)
+    const keyHeader = `Votants${hh}h`;    // Votants09h
+    const keyHeader2 = `Votants${hh}`;    // Votants09
+
+    const candidates = [
+      obj[keyNorm],
+      obj[keyNorm2],
+      obj[keyHeader],
+      obj[keyHeader2],
+      obj[hourLabel],                      // '09h'
+      obj[String(hourLabel).replace('h','')], // '09'
+      obj?.votants?.[hourLabel],
+      obj?.votantsParHeure?.[hourLabel],
+      obj?.participation?.[hourLabel],
+    ];
+
+    for (const v of candidates) {
+      const n = typeof v === 'string' ? parseInt(v.replace(/\s|\u202f/g, ''), 10) : Number(v);
+      if (!Number.isNaN(n) && Number.isFinite(n)) return n;
+    }
+    return 0;
+  }
+
+  /**
+   * Construit les lignes de l'onglet "Participation T{tour}" pour l'export complet.
+   * Colonnes :
+   * Bureau | Nom bureau | Inscrits | 09h..20h | Dernier état (votants) | Taux dernier état
+   */
+  _buildParticipationRows(participationRows, bureauxRows, tour) {
+    const hours = this._getFixedHours();
+
+    // map bureaux: id -> nom
+    const bureauNameById = new Map();
+    (bureauxRows || []).forEach(b => {
+      const id = b?.id || b?.ID || b?.bureauId || b?.BureauID || '';
+      const nom = b?.nom || b?.Nom || b?.nomBureau || b?.['Nom bureau'] || '';
+      if (id) bureauNameById.set(String(id), String(nom || ''));
+    });
+
+    return (participationRows || []).map(p => {
+      const bureauId = p?.bureauId || p?.BureauID || p?.bureau || p?.id || p?.ID || '';
+      const inscritsRaw = p?.inscrits ?? p?.Inscrits ?? 0;
+      const inscrits = typeof inscritsRaw === 'string' ? parseInt(inscritsRaw.replace(/\s|\u202f/g, ''), 10) : Number(inscritsRaw) || 0;
+
+      // heures
+      const hourVals = {};
+      let lastHour = null;
+      let lastVotants = 0;
+
+      for (const h of hours) {
+        const v = this._getVotantsAtHour(p, h);
+        hourVals[h] = v;
+        if (v > 0) {
+          lastHour = h;
+          lastVotants = v;
+        }
+      }
+
+      const taux = inscrits > 0 ? (lastVotants / inscrits) * 100 : 0;
+
+      return {
+        'Bureau': bureauId,
+        'Nom bureau': bureauNameById.get(String(bureauId)) || '',
+        'Inscrits': inscrits,
+        ...hourVals,
+        'Dernier état (votants)': lastVotants,
+        'Taux dernier état': Math.round(taux * 100) / 100,
+      };
+    });
+  }
+
+  /**
+   * Construit les lignes de l'onglet "Résultats T{tour}" pour l'export complet.
+   * On exporte 1 ligne par bureau, avec :
+   * Bureau | Nom bureau | Inscrits | Votants | Blancs | Nuls | Exprimés | L1 — NomListe | L2 — ...
+   */
+  _buildResultatsRows(resultatsRows, candidatsRows, tour) {
+    const candidats = (candidatsRows || [])
+      .filter(c => (tour === 1 ? (c?.actifT1 ?? c?.ActifT1) : (c?.actifT2 ?? c?.ActifT2)) !== false)
+      .sort((a, b) => (Number(a?.ordre ?? a?.Ordre ?? 0) - Number(b?.ordre ?? b?.Ordre ?? 0)));
+
+    const colDefs = candidats.map(c => {
+      const listeId = c?.listeId || c?.ListeID || c?.id || '';
+      const nomListe = c?.nomListe || c?.NomListe || '';
+      return { listeId: String(listeId), col: `${String(listeId)} — ${String(nomListe || '').trim()}`.trim() };
+    });
+
+    return (resultatsRows || []).map(r => {
+      const bureauId = r?.bureauId || r?.BureauID || r?.bureau || r?.id || r?.ID || '';
+      const inscrits = Number(r?.inscrits ?? r?.Inscrits ?? 0) || 0;
+      const votants = Number(r?.votants ?? r?.Votants ?? 0) || 0;
+      const blancs = Number(r?.blancs ?? r?.Blancs ?? 0) || 0;
+      const nuls = Number(r?.nuls ?? r?.Nuls ?? 0) || 0;
+      const exprimes = Number(r?.exprimes ?? r?.Exprimes ?? 0) || 0;
+
+      const voixObj = r?.voix || r?.Voix || {};
+      const out = {
+        'Bureau': bureauId,
+        'Inscrits': inscrits,
+        'Votants': votants,
+        'Blancs': blancs,
+        'Nuls': nuls,
+        'Exprimés': exprimes,
+      };
+
+      for (const { listeId, col } of colDefs) {
+        const v = voixObj?.[listeId] ?? voixObj?.[String(listeId).toUpperCase()] ?? r?.[`${listeId}_Voix`] ?? r?.[`${listeId}Voix`] ?? 0;
+        out[col] = Number(v) || 0;
+      }
+
+      // Métadonnées (si présentes)
+      if (r?.timestamp || r?.Timestamp) out['Horodatage'] = r?.timestamp || r?.Timestamp;
+      if (r?.saisiPar || r?.SaisiPar) out['Saisi par'] = r?.saisiPar || r?.SaisiPar;
+      if (r?.validePar || r?.ValidePar) out['Validé par'] = r?.validePar || r?.ValidePar;
+
+      return out;
+    });
+  }
+
 
   /**
    * Télécharge un blob

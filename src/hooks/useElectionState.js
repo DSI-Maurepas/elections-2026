@@ -13,6 +13,8 @@ export const useElectionState = () => {
     tourActuel: 1, // 1 ou 2
     tour1Verrouille: false,
     tour2Verrouille: false,
+    // Flag piloté par l'Administration
+    secondTourEnabled: false,
     dateT1: '2026-03-15',
     dateT2: '2026-03-22',
     candidatsQualifies: [], // Pour le T2
@@ -30,6 +32,27 @@ export const useElectionState = () => {
     return token;
   };
 
+  const coerceBool = (v, def = false) => {
+    if (v === true) return true;
+    if (v === false) return false;
+    if (typeof v === 'number') return v === 1;
+    if (typeof v === 'string') {
+      const s = v.trim().toLowerCase();
+      if (!s) return def;
+      return (
+        s === 'true' ||
+        s === '1' ||
+        s === 'oui' ||
+        s === 'vrai' ||
+        s === 'actif' ||
+        s === 'enabled' ||
+        s === 'on' ||
+        s === 'yes'
+      );
+    }
+    return def;
+  };
+
   // Charger l'état depuis Google Sheets
   const loadState = useCallback(async () => {
     try {
@@ -38,16 +61,28 @@ export const useElectionState = () => {
       ensureToken();
       const data = await googleSheetsService.getElectionState();
 
-      setState({
+      // IMPORTANT: on CONSERVE les clés inconnues déjà présentes et on ajoute/actualise les clés connues.
+      // Cela évite les régressions lorsque de nouveaux flags sont introduits (ex: secondTourEnabled).
+      setState(prev => ({
+        ...prev,
+
         tourActuel: data.tourActuel ?? 1,
-        tour1Verrouille: data.tour1Verrouille ?? false,
-        tour2Verrouille: data.tour2Verrouille ?? false,
+        tour1Verrouille: coerceBool(data.tour1Verrouille, false),
+        tour2Verrouille: coerceBool(data.tour2Verrouille, false),
+
+        // Flag ajouté (piloté depuis Administration)
+        secondTourEnabled: coerceBool(data.secondTourEnabled ?? data.passageSecondTourEnabled ?? data.t2Enabled, prev.secondTourEnabled),
+
         dateT1: data.dateT1 || '2026-03-15',
         dateT2: data.dateT2 || '2026-03-22',
-        candidatsQualifies: Array.isArray(data.candidatsQualifies) ? data.candidatsQualifies : (data.candidatsQualifies ? [data.candidatsQualifies] : []),
+
+        candidatsQualifies: Array.isArray(data.candidatsQualifies)
+          ? data.candidatsQualifies
+          : (data.candidatsQualifies ? [data.candidatsQualifies] : []),
+
         loading: false,
         error: null
-      });
+      }));
     } catch (error) {
       console.error('Erreur chargement état élection:', error);
       // Si non authentifié, on stoppe proprement sans boucler
