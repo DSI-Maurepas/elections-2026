@@ -614,3 +614,45 @@
 /* Tonalité bordure : ok=vert, warn=orange */
 .tour-pill--ok { border-color: rgba(34, 197, 94, 0.85); }
 .tour-pill--warn { border-color: rgba(245, 158, 11, 0.90); }
+
+/* === NAV FIX START === */
+/* ---- Titre (non-régression) ---- */
+.main-navigation .nav-header .app-title-year{
+  font-size: 72px;              /* 2026 plus grand */
+  line-height: 0.92;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+}
+
+/* ---- Menu: desktop en ligne, mobile en colonne ---- */
+.main-navigation .nav-menu{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.main-navigation .nav-menu li{
+  width: auto;
+}
+
+/* Mobile / responsive: boutons empilés, même largeur = plus grand, sans full-width */
+@media (max-width: 900px){
+  .main-navigation .nav-menu{
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: center;              /* centré */
+  }
+  .main-navigation .nav-menu li{
+    width: auto;
+  }
+  .main-navigation .nav-menu .nav-item{
+    width: var(--nav-btn-w, auto);    /* largeur du plus grand */
+    max-width: calc(100vw - 2rem);
+    justify-content: center;
+  }
+}
+/* === NAV FIX END === */

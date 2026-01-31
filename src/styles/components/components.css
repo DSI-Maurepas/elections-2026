@@ -1082,3 +1082,424 @@
     margin-bottom: 8px;
   }
 }
+
+/* === STICKY OVERRIDE HARDENING START === */
+/* Sticky 1ère colonne (HARDENING) : force le comportement même si d'autres règles existent */
+.table-scroll{
+  position: relative !important;
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+}
+
+/* Forcer l’affichage table (au cas où un responsive "block" casserait sticky) */
+.table-scroll table.admin-table,
+.table-scroll table.audit-table{
+  display: table !important;
+}
+.table-scroll thead{ display: table-header-group !important; }
+.table-scroll tbody{ display: table-row-group !important; }
+.table-scroll tr{ display: table-row !important; }
+.table-scroll th,
+.table-scroll td{
+  display: table-cell !important;
+  background-clip: padding-box;
+}
+
+/* Sticky header */
+.table-scroll .admin-table thead th,
+.table-scroll .audit-table thead th{
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 20 !important;
+}
+
+/* Sticky colonne 1 (Admin: Bureaux / Candidats / Audit)
+   - La zone qui scroll doit être .table-scroll (overflow-x:auto)
+   - Pour fiabiliser le sticky dans les tableaux, on force border-collapse: separate
+*/
+.table-scroll{
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+
+.table-scroll table{
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  min-width: 720px; /* garantit un vrai scroll horizontal si nécessaire */
+}
+
+.table-scroll thead th{
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+/* 1ère colonne collée */
+.table-scroll th:first-child,
+.table-scroll td:first-child{
+  position: -webkit-sticky !important;
+  position: sticky !important;
+  left: 0 !important;
+  z-index: 30 !important;
+  background: #fff !important;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.12);
+}
+
+/* Respect des lignes zébrées sur la cellule sticky */
+.table-scroll tbody tr:nth-child(even) td:first-child{
+  background: #f3f3f3 !important;
+}
+
+
+/* Zébrage + sticky colonne garde la couleur */
+.table-scroll .admin-table tbody tr:nth-child(even) td,
+.table-scroll .audit-table tbody tr:nth-child(even) td{
+  background: rgba(0,0,0,0.04) !important;
+}
+.table-scroll .admin-table tbody tr:nth-child(even) td:first-child,
+.table-scroll .audit-table tbody tr:nth-child(even) td:first-child{
+  background: rgba(0,0,0,0.04) !important;
+}
+/* === STICKY OVERRIDE HARDENING END === */
+
+/* === STICKY COL v2 (broad containers + table-collapse fix) === */
+.admin-table-container,
+.audit-table-container{
+  position: relative !important;
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Important: sticky in table cells is unreliable with border-collapse: collapse */
+.admin-table,
+.audit-table{
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+/* Force sticky first col inside these containers too */
+.admin-table-container .admin-table thead th:first-child,
+.admin-table-container .admin-table tbody td:first-child,
+.audit-table-container .audit-table thead th:first-child,
+.audit-table-container .audit-table tbody td:first-child{
+  position: -webkit-sticky !important;
+  position: sticky !important;
+  left: 0 !important;
+  z-index: 30 !important;
+  background: #fff !important;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.12) !important;
+}
+
+/* Keep zebra color for sticky */
+.admin-table-container .admin-table tbody tr:nth-child(even) td:first-child,
+.audit-table-container .audit-table tbody tr:nth-child(even) td:first-child{
+  background: rgba(0,0,0,0.04) !important;
+}
+
+/* Sticky colonne 1 - version robuste (nécessite .table-scroll autour du <table>) */
+.table-scroll{
+  overflow-x:auto;
+  overflow-y:hidden;          /* évite certains comportements bizarres de sticky */
+  -webkit-overflow-scrolling: touch;
+  position: relative;         /* contexte z-index pour sticky */
+  max-width: 100%;
+}
+
+/* IMPORTANT: sticky + table => border-collapse: separate */
+.sticky-first-col{
+  border-collapse: separate !important;
+  border-spacing: 0;
+}
+
+/* La cellule sticky (th/td) */
+.sticky-first-col .sticky-col{
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: inherit;        /* on force ensuite un fond sur th / zebra ci-dessous */
+  box-shadow: 6px 0 10px rgba(0,0,0,0.12);
+}
+
+/* Header sticky au-dessus du reste */
+.sticky-first-col thead .sticky-col{
+  z-index: 5;
+  background: #9aa3ad;        /* même fond que header */
+  color: #fff;
+}
+
+/* Zebra + fond de la colonne sticky, sinon ça “transperce” */
+.sticky-first-col tbody tr:nth-child(even) .sticky-col{ background: #f2f2f2; }
+.sticky-first-col tbody tr:nth-child(odd)  .sticky-col{ background: #ffffff; }
+
+/* Largeur mini de la 1ère colonne (ajuste si besoin) */
+.sticky-first-col .sticky-col{ min-width: 92px; }
+
+/* ===========================
+   Split tables (anti-sticky) for Admin/Audit
+   1ère colonne figée sans position:sticky (2 tableaux synchronisés)
+   =========================== */
+
+.split-table{
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  background: #fff;
+  margin-bottom: 1rem;
+}
+
+/* Colonne figée : scroll vertical uniquement */
+.split-table-left{
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 360px; /* ajuste si besoin */
+  border-right: 1px solid rgba(0,0,0,0.08);
+}
+
+/* Partie droite : scroll horizontal + vertical */
+.split-table-right{
+  overflow: auto;
+  max-height: 360px; /* doit matcher left */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tables */
+.admin-table.split,
+.audit-table.split{
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  width: max-content;
+}
+
+/* Header */
+.admin-table.split thead th,
+.audit-table.split thead th{
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #9aa4b1;
+  color: #fff;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Zebra (alignement visuel entre les 2 tableaux) */
+.admin-table.split tbody tr:nth-child(even) td,
+.audit-table.split tbody tr:nth-child(even) td{
+  background: rgba(0,0,0,0.04);
+}
+
+/* Cells */
+.admin-table.split th,
+.admin-table.split td,
+.audit-table.split th,
+.audit-table.split td{
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  white-space: nowrap;
+}
+
+/* Cellule colonne figée */
+.split-sticky-cell{
+  font-weight: 800;
+}
+
+/* Responsive: si écran très étroit, on élargit la colonne fixée */
+@media (max-width: 520px){
+  .split-table{ grid-template-columns: 140px 1fr; }
+}
+
+/* ===========================
+   Split tables (anti-sticky) for Admin/Audit
+   1ère colonne figée sans position:sticky (2 tableaux synchronisés)
+   =========================== */
+
+.split-table{
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  background: #fff;
+  margin-bottom: 1rem;
+}
+
+/* Colonne figée : scroll vertical uniquement */
+.split-table-left{
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 360px; /* ajuste si besoin */
+  border-right: 1px solid rgba(0,0,0,0.08);
+}
+
+/* Partie droite : scroll horizontal + vertical */
+.split-table-right{
+  overflow: auto;
+  max-height: 360px; /* doit matcher left */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tables */
+.admin-table.split,
+.audit-table.split{
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  width: max-content;
+}
+
+/* Header */
+.admin-table.split thead th,
+.audit-table.split thead th{
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #9aa4b1;
+  color: #fff;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Zebra (alignement visuel entre les 2 tableaux) */
+.admin-table.split tbody tr:nth-child(even) td,
+.audit-table.split tbody tr:nth-child(even) td{
+  background: rgba(0,0,0,0.04);
+}
+
+/* Cells */
+.admin-table.split th,
+.admin-table.split td,
+.audit-table.split th,
+.audit-table.split td{
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  white-space: nowrap;
+}
+
+/* Cellule colonne figée */
+.split-sticky-cell{
+  font-weight: 800;
+}
+
+/* Responsive: si écran très étroit, on élargit la colonne fixée */
+@media (max-width: 520px){
+  .split-table{ grid-template-columns: 140px 1fr; }
+}
+/* Variante sans ascenseur vertical (ex: Bureaux) */
+.split-table--no-vscroll .split-table-left{
+  max-height: none;
+  overflow-y: visible;
+}
+.split-table--no-vscroll .split-table-right{
+  max-height: none;
+  overflow-y: hidden;
+  overflow-x: auto;
+}
+
+/* ===========================
+   Split tables (anti-sticky) for Admin/Audit
+   1ère colonne figée sans position:sticky (2 tableaux synchronisés)
+   =========================== */
+
+.split-table{
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  background: #fff;
+  margin-bottom: 1rem;
+}
+
+/* Colonne figée : scroll vertical uniquement */
+.split-table-left{
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 360px; /* ajuste si besoin */
+  border-right: 1px solid rgba(0,0,0,0.08);
+}
+
+/* Partie droite : scroll horizontal + vertical */
+.split-table-right{
+  overflow: auto;
+  max-height: 360px; /* doit matcher left */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tables */
+.admin-table.split,
+.audit-table.split{
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  width: max-content;
+}
+
+/* Header */
+.admin-table.split thead th,
+.audit-table.split thead th{
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #9aa4b1;
+  color: #fff;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Zebra (alignement visuel entre les 2 tableaux) */
+.admin-table.split tbody tr:nth-child(even) td,
+.audit-table.split tbody tr:nth-child(even) td{
+  background: rgba(0,0,0,0.04);
+}
+
+/* Cells */
+.admin-table.split th,
+.admin-table.split td,
+.audit-table.split th,
+.audit-table.split td{
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  white-space: nowrap;
+}
+
+/* Cellule colonne figée */
+.split-sticky-cell{
+  font-weight: 800;
+}
+
+/* Responsive: si écran très étroit, on élargit la colonne fixée */
+@media (max-width: 520px){
+  .split-table{ grid-template-columns: 140px 1fr; }
+}
+/* Variante sans ascenseur vertical (ex: Bureaux) */
+.split-table--no-vscroll .split-table-left{
+  max-height: none;
+  overflow-y: visible;
+}
+.split-table--no-vscroll .split-table-right{
+  max-height: none;
+  overflow-y: hidden;
+  overflow-x: auto;
+}
+
+/* Pastille couleur (si utilisée ailleurs) */
+.color-chip{
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.25);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  vertical-align: middle;
+}
+
+/* === STICKY COL v2 END === */

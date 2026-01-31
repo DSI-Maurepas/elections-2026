@@ -1,60 +1,123 @@
-import React, { useEffect } from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
-import { useGoogleSheets } from '../../hooks/useGoogleSheets';
+import React, { useEffect, useMemo, useRef } from "react";
+import { useGoogleSheets } from "../../hooks/useGoogleSheets";
 
+/**
+ * Admin - Candidats
+ * Version "anti-sticky": 1ère colonne figée via 2 tableaux synchronisés.
+ */
 const ConfigCandidats = () => {
-  const { state } = useElectionState();
-  const { data: candidats, load, loading } = useGoogleSheets('Candidats');
+  const { data: candidats, load, loading } = useGoogleSheets("Candidats");
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const tourActuel = state?.tourActuel ?? 1;
+  const all = useMemo(() => (Array.isArray(candidats) ? candidats : []), [candidats]);
+  const tour1 = useMemo(() => all.filter((c) => c.actifT1), [all]);
+  const tour2 = useMemo(() => all.filter((c) => c.actifT2), [all]);
 
-  const isActifPourTour = (c) => {
-    if (tourActuel === 1) return c.actifT1;
-    if (tourActuel === 2) return c.actifT2;
-    return false;
+  const renderSplit = (rows, title) => {
+    const leftRef = { current: null };
+    const rightRef = { current: null };
+
+    // local refs via callback to avoid re-render loops
+    const setLeft = (el) => (leftRef.current = el);
+    const setRight = (el) => (rightRef.current = el);
+
+    const sync = (src) => {
+      const l = leftRef.current;
+      const r = rightRef.current;
+      if (!l || !r) return;
+      if (src === "right") l.scrollTop = r.scrollTop;
+      if (src === "left") r.scrollTop = l.scrollTop;
+    };
+
+    return (
+      <div className="config-candidats-section">
+        <h3>👤 {title}</h3>
+
+        <div className="split-table">
+          <div className="split-table-left" ref={setLeft} onScroll={() => sync("left")}>
+            <table className="admin-table split">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((c) => {
+                  const id = c.listeId || c.id || "";
+                  return (
+                    <tr key={id}>
+                      <td className="split-sticky-cell">
+                        <strong>{id}</strong>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="split-table-right" ref={setRight} onScroll={() => sync("right")}>
+            <table className="admin-table split">
+              <thead>
+                <tr>
+                  <th>Liste / Parti</th>
+                  <th>Tête de liste</th>
+                  <th>Ordre</th>
+                  <th>Actif</th>
+                  <th>Couleur</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((c) => {
+                  const id = c.listeId || c.id || "";
+                  const tete = `${c.teteListePrenom || ""} ${c.teteListeNom || ""}`.trim();
+                  const actif = title.includes("Tour 2") ? c.actifT2 : c.actifT1;
+                  return (
+                    <tr key={id}>
+                      <td>{c.nomListe || ""}</td>
+                      <td>
+                        <strong>{tete}</strong>
+                      </td>
+                      <td>{c.ordre ?? ""}</td>
+                      <td>{actif ? "✅" : "❌"}</td>
+                      <td style={{ textAlign: "center" }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: 18,
+                            height: 18,
+                            borderRadius: 6,
+                            background: c.couleur || "#0055A4",
+                            border: "1px solid rgba(0,0,0,0.25)",
+                            boxShadow: "0 2px 6px rgba(0,0,0,0.12)"
+                          }}
+                          aria-label={`Couleur ${c.couleur || "#0055A4"}`}
+                          title={c.couleur || "#0055A4"}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="config-candidats">
-      <h3>👤 Configuration des candidats - Tour {tourActuel}</h3>
-
       {loading ? (
         <p>Chargement...</p>
       ) : (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Nom</th>
-              <th>Liste / Parti</th>
-              <th>Tour</th>
-            </tr>
-          </thead>
-          <tbody>
-            {candidats
-              .filter(isActifPourTour)
-              .sort((a, b) => a.ordre - b.ordre)
-              .map((candidat) => (
-                <tr key={candidat.listeId}>
-                  <td>{candidat.listeId}</td>
-                  <td>
-                    <strong>
-                      {candidat.teteListePrenom} {candidat.teteListeNom}
-                    </strong>
-                  </td>
-                  <td>{candidat.nomListe}</td>
-                  <td>
-                    {tourActuel === 1 && candidat.actifT1 && 'Tour 1'}
-                    {tourActuel === 2 && candidat.actifT2 && 'Tour 2'}
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
+        <>
+          {renderSplit(tour1, "Configuration des candidats - Tour 1")}
+          {renderSplit(tour2, "Configuration des candidats - Tour 2")}
+        </>
       )}
     </div>
   );

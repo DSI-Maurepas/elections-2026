@@ -1,5 +1,5 @@
-import React from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
+import React, { useEffect, useState, useRef, useLayoutEffect } from "react";
+import { useElectionState } from "../../hooks/useElectionState";
 
 /**
  * Navigation principale de l'application
@@ -77,6 +77,35 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
     return '🔴';
   };
 
+
+  // === Responsive nav buttons: même largeur (celle du plus grand) en mobile uniquement ===
+  const btnRefs = useRef([]);
+  const [mobileBtnWidth, setMobileBtnWidth] = useState(null);
+
+  useLayoutEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)');
+    const compute = () => {
+      if (!mq.matches) {
+        setMobileBtnWidth(null);
+        return;
+      }
+      const widths = btnRefs.current
+        .filter(Boolean)
+        .map((el) => Math.ceil(el.getBoundingClientRect().width));
+      const max = widths.length ? Math.max(...widths) : null;
+      setMobileBtnWidth(max);
+    };
+
+    compute();
+    window.addEventListener('resize', compute);
+    mq.addEventListener?.('change', compute);
+
+    return () => {
+      window.removeEventListener('resize', compute);
+      mq.removeEventListener?.('change', compute);
+    };
+  }, [currentPage]);
+
   return (
     <nav className="main-navigation" aria-label="Navigation principale">
       <div className="nav-header">
@@ -136,12 +165,13 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
         </div>
       </div>
 
-      <ul className="nav-menu">
+      <ul className="nav-menu" style={mobileBtnWidth ? { "--nav-btn-w": `${mobileBtnWidth}px` } : undefined}>
         {menuItems
           .filter((item) => item.always || item.show)
-          .map((item) => (
+          .map((item, idx) => (
             <li key={item.id}>
               <button
+                ref={(el) => { btnRefs.current[idx] = el; }}
                 className={`nav-item ${currentPage === item.page ? 'active' : ''}`}
                 onClick={() => onNavigate(item.page)}
                 type="button"

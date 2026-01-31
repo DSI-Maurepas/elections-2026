@@ -175,29 +175,69 @@ function App() {
     }
   };
 
+  // 🟧/🟩 Activer/Désactiver le passage au 2nd tour (admin uniquement)
+  const handleSetSecondTourEnabled = async (enabled) => {
+    if (!isAuthenticated || !isAdminAuthenticated) return;
+
+    const label = enabled ? "ACTIVER" : "DÉSACTIVER";
+    const confirm1 = window.confirm(
+      `${label} le passage au 2nd tour ?\n\nCette action n'exécute pas le passage au tour 2 : elle autorise ou bloque la confirmation dans 'Passage au 2nd tour'.`
+    );
+    if (!confirm1) return;
+
+    try {
+      await googleSheetsService.updateElectionState({
+        secondTourEnabled: Boolean(enabled)
+      });
+
+      try {
+        await auditService.log("SECOND_TOUR_TOGGLE", {
+          enabled: Boolean(enabled),
+          from: electionState?.secondTourEnabled ?? null
+        });
+      } catch (e) {
+        console.warn("Audit SECOND_TOUR_TOGGLE échoué:", e);
+      }
+
+      await loadState?.();
+    } catch (e) {
+      console.error("Erreur toggle secondTourEnabled:", e);
+      alert(`Erreur : ${e?.message || "Erreur inconnue"}`);
+    }
+  };
+
+  // ====== Styles (inline) : largeur au contenu + cohérence visuelle ======
   const styles = {
     smallBtn: {
-      padding: "0.32rem 0.6rem",
+      padding: "0.34rem 0.62rem",
       borderRadius: 10,
       fontWeight: 900,
       fontSize: 13,
       lineHeight: 1.1,
       boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
       border: "1px solid rgba(0,0,0,0.10)",
-      whiteSpace: "nowrap",
-      minHeight: 34
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: "fit-content"
     },
     btnDanger: {
       background: "rgba(220, 38, 38, 0.14)",
-      border: "1px solid rgba(220, 38, 38, 0.55)"
+      border: "1px solid rgba(220, 38, 38, 0.60)"
     },
     btnSuccess: {
       background: "rgba(34, 197, 94, 0.14)",
-      border: "1px solid rgba(34, 197, 94, 0.55)"
+      border: "1px solid rgba(34, 197, 94, 0.60)"
     },
-    btnWarning: {
-      background: "rgba(245, 158, 11, 0.14)",
-      border: "1px solid rgba(245, 158, 11, 0.55)"
+    // Retour T1 = vert (comme le header 1er tour)
+    btnT1: {
+      background: "rgba(34, 197, 94, 0.14)",
+      border: "1px solid rgba(34, 197, 94, 0.75)"
+    },
+    // Retour T2 = orange (comme le header 2nd tour)
+    btnT2: {
+      background: "rgba(245, 158, 11, 0.16)",
+      border: "1px solid rgba(194, 120, 3, 0.85)"
     },
     sectionCard: {
       marginBottom: "1rem",
@@ -219,6 +259,34 @@ function App() {
       if (tone === "green") return { ...base, background: "rgba(34, 197, 94, 0.12)", border: "1px solid rgba(34, 197, 94, 0.40)" };
       if (tone === "red") return { ...base, background: "rgba(220, 38, 38, 0.12)", border: "1px solid rgba(220, 38, 38, 0.40)" };
       return { ...base, background: "rgba(0,0,0,0.05)", border: "1px solid rgba(0,0,0,0.08)" };
+    },
+    duoBlock: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+      gap: 12,
+      padding: 12,
+      borderRadius: 14,
+      boxShadow: "0 10px 26px rgba(0,0,0,0.08)",
+      border: "1px solid rgba(0,0,0,0.06)",
+      background: "#fff",
+      marginBottom: "1rem"
+    },
+    panel: (bg) => ({
+      borderRadius: 14,
+      padding: 12,
+      border: "1px solid rgba(0,0,0,0.06)",
+      boxShadow: "0 8px 18px rgba(0,0,0,0.06)",
+      background: bg
+    }),
+    panelTitle: {
+      marginTop: 0,
+      marginBottom: 6,
+      fontSize: 16,
+      fontWeight: 900
+    },
+    panelText: {
+      marginTop: 0,
+      opacity: 0.9
     }
   };
 
@@ -246,7 +314,7 @@ function App() {
       >
         <div
           className="card"
-          style={{ maxWidth: 520, width: '100%', padding: '1rem' }}
+          style={{ maxWidth: 520, width: '100%', padding: '1rem', maxHeight: '90vh', overflowY: 'auto' }}
           onClick={(e) => e.stopPropagation()}
         >
           <h2 style={{ marginTop: 0 }}>⚙️ Accès Administration</h2>
@@ -322,44 +390,74 @@ function App() {
     </div>
   );
 
-  const renderAdminResetBlock = () => {
+  // Bloc combiné : Retour T1 + Passage T2 côte à côte, couleurs distinctes
+  const renderAdminTourControls = () => {
     if (!isAdminAuthenticated) return null;
 
     const tourActuel = electionState?.tourActuel ?? 1;
     const secondTourEnabled = Boolean(electionState?.secondTourEnabled);
 
     return (
-      <div className="card" style={styles.sectionCard}>
-        <h3 style={{ marginTop: 0 }}>🔄 Retour au 1er tour</h3>
+      <div style={styles.duoBlock}>
+        <div style={styles.panel("rgba(34, 197, 94, 0.08)")}>
+          <h3 style={styles.panelTitle}>🔄 Retour 1er tour</h3>
+          <p style={styles.panelText}>
+            Réinitialise l’état global en mode <strong>T1</strong> (non destructif).
+          </p>
 
-        <p style={{ marginTop: 0 }}>
-          Retour en mode <strong>Premier tour</strong> (tests / préparation du scrutin). Action <strong>non destructive</strong>.
-        </p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+            <span style={styles.chip("red")}>
+              Tour actuel : <strong>{tourActuel}</strong>
+            </span>
+          </div>
 
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", margin: "0.75rem 0" }}>
-          <span style={styles.chip("red")}>
-            Tour actuel : <strong>{tourActuel}</strong>
-          </span>
-          <span style={styles.chip(secondTourEnabled ? "green" : "red")}>
-            Passage T2 : <strong>{secondTourEnabled ? "Actif" : "Inactif"}</strong>
-          </span>
-        </div>
-
-        <div className="message warning" style={{ margin: "0.75rem 0" }}>
-          ⚠️ Action sensible. Double confirmation requise.
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="button"
-            className="action-btn"
-            style={{ ...styles.smallBtn, ...styles.btnWarning }}
+            className="action-btn btn-compact"
+            style={{ ...styles.smallBtn, ...styles.btnT1 }}
             disabled={tourActuel === 1 && !secondTourEnabled}
             onClick={handleRetourPremierTour}
             title={tourActuel === 1 && !secondTourEnabled ? "Déjà en mode 1er tour" : "Revenir au 1er tour"}
           >
             Retour T1
           </button>
+        </div>
+
+        <div style={styles.panel("rgba(245, 158, 11, 0.08)")}>
+          <h3 style={styles.panelTitle}>🟧 Passage 2nd tour</h3>
+          <p style={styles.panelText}>
+            Autorise / bloque la confirmation du passage au 2nd tour (écran Passage T2).
+          </p>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+            <span style={styles.chip(secondTourEnabled ? "green" : "red")}>
+              Passage T2 : <strong>{secondTourEnabled ? "Actif" : "Inactif"}</strong>
+            </span>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="action-btn btn-compact"
+              style={{ ...styles.smallBtn, ...styles.btnT2 }}
+              onClick={() => handleSetSecondTourEnabled(true)}
+              disabled={secondTourEnabled === true}
+              title={secondTourEnabled ? "Déjà actif" : "Activer"}
+            >
+              Retour T2
+            </button>
+
+            <button
+              type="button"
+              className="action-btn btn-compact"
+              style={{ ...styles.smallBtn, ...styles.btnDanger }}
+              onClick={() => handleSetSecondTourEnabled(false)}
+              disabled={secondTourEnabled === false}
+              title={!secondTourEnabled ? "Déjà inactif" : "Désactiver"}
+            >
+              Inactif
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -374,6 +472,12 @@ function App() {
 
   const renderAdminTablesStyle = () => (
     <style>{`
+      /* ====== Boutons : même taille en responsive ====== */
+      .btn-compact{ width: fit-content; }
+      @media (max-width: 640px){
+        .btn-compact{ width: 100% !important; justify-content: center; }
+      }
+
       /* ====== TABLES ADMIN: lisibilité + arrondis + zébrage ====== */
       .admin-table, .audit-table {
         width: 100%;
@@ -407,9 +511,23 @@ function App() {
         border-bottom: none;
       }
 
-      /* conteneurs éventuels */
       .audit-table-container {
         overflow-x: auto;
+      }
+
+      /* ===== Tableau admin responsive (bureaux/candidats) ===== */
+      .table-scroll{ overflow-x:auto; }
+      .table-scroll .admin-table{ min-width: 900px; }
+      .sticky-first-col th:first-child,
+      .sticky-first-col td.sticky-col{
+        position: sticky;
+        left: 0;
+        background: #fff;
+        z-index: 2;
+        border-right: 1px solid rgba(0,0,0,0.10);
+      }
+      .sticky-first-col tbody tr:nth-child(even) td.sticky-col{
+        background: rgba(0,0,0,0.03);
       }
     `}</style>
   );
@@ -480,7 +598,7 @@ function App() {
                 {isAdminAuthenticated && (
                   <button
                     type="button"
-                    className="action-btn"
+                    className="action-btn btn-compact"
                     style={{ ...styles.smallBtn, ...styles.btnDanger }}
                     onClick={handleAdminLogout}
                   >
@@ -495,7 +613,7 @@ function App() {
 
             {isAdminAuthenticated ? (
               <>
-                {renderAdminResetBlock()}
+                {renderAdminTourControls()}
 
                 <CardSection>
                   <ConfigBureaux />

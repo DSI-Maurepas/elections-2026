@@ -267,6 +267,43 @@ const PassageSecondTour = () => {
     <div className="passage-t2">
       <h2>➡️ Passage au 2nd tour</h2>
 
+      <style>{`
+        .tour-info-card{
+          margin: 14px 0 0 0;
+          padding: 14px;
+          border-radius: 14px;
+          border: 1px solid rgba(0,0,0,0.06);
+          background: rgba(255,255,255,0.92);
+          box-shadow: 0 10px 26px rgba(0,0,0,0.06);
+        }
+        .tour-info-row{
+          display:flex;
+          gap: 14px;
+          flex-wrap: wrap;
+          align-items: stretch;
+        }
+        .tour-info-item{
+          flex: 1 1 220px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          background: rgba(0,0,0,0.03);
+          border: 1px solid rgba(0,0,0,0.06);
+        }
+        .tour-info-item .label{
+          font-size: 12px;
+          font-weight: 800;
+          opacity: 0.8;
+          text-transform: uppercase;
+          letter-spacing: .4px;
+        }
+        .tour-info-item .value{
+          margin-top: 6px;
+          font-size: 18px;
+          font-weight: 900;
+        }
+      `}</style>
+
+
       {!secondTourEnabled && (
         <div className="message warning" style={{ marginBottom: 12 }}>
           ⛔ Le passage au 2nd tour est actuellement <strong>désactivé</strong>. Active-le via{' '}
@@ -379,6 +416,23 @@ const PassageSecondTour = () => {
           </div>
         </div>
       )}
+
+
+      {/* 📅 Infos officielles du 2nd tour (évite doublon avec ConfigurationT2) */}
+      <div className="tour-info-card">
+        <div className="tour-info-row">
+          <div className="tour-info-item">
+            <div className="label">Date du 2nd tour</div>
+            <div className="value">
+              {electionState?.dateT2 ? new Date(electionState.dateT2).toLocaleDateString('fr-FR') : '—'}
+            </div>
+          </div>
+          <div className="tour-info-item">
+            <div className="label">Horaires</div>
+            <div className="value">08h00 – 20h00</div>
+          </div>
+        </div>
+      </div>
 
       <div className="actions">
         <button
