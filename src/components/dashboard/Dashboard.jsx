@@ -1,7 +1,7 @@
 // src/components/dashboard/Dashboard.jsx
 import React, { useEffect, useState } from "react";
 import authService from "../../services/authService";
-import { useElectionState } from "../../hooks/useElectionState";
+import calculService from "../../services/calculService";
 import { useGoogleSheets } from "../../hooks/useGoogleSheets";
 import googleSheetsService from "../../services/googleSheetsService";
 
@@ -9,10 +9,13 @@ import googleSheetsService from "../../services/googleSheetsService";
  * Tableau de bord principal
  * Vue d'ensemble de l'élection en cours
  */
-export default function Dashboard({ onNavigate }) {
-  const { state: electionState } = useElectionState();
+export default function Dashboard({ onNavigate, electionState }) {
   const { data: bureaux, load: loadBureaux } = useGoogleSheets("Bureaux");
   const { data: candidats, load: loadCandidats } = useGoogleSheets("Candidats");
+
+  // Participation : on charge T1 ou T2 selon le tour actuel (sans hook conditionnel)
+  const { data: participationT1, load: loadParticipationT1 } = useGoogleSheets("Participation_T1");
+  const { data: participationT2, load: loadParticipationT2 } = useGoogleSheets("Participation_T2");
 
   const [stats, setStats] = useState({
     totalInscrits: 0,
@@ -23,6 +26,7 @@ export default function Dashboard({ onNavigate }) {
   });
 
   const isAuthed = Boolean(authService.getAccessToken());
+  const tourActuel = electionState?.tourActuel ?? 1;
 
   /* ===========================
      TEST MINIMAL GOOGLE SHEETS
@@ -45,28 +49,33 @@ export default function Dashboard({ onNavigate }) {
      CHARGEMENT DES DONNÉES
      =========================== */
   useEffect(() => {
-    // ✅ Ne charge pas tant que non authentifié (évite spam console)
     if (!authService.getAccessToken()) return;
 
-    loadBureaux();
-    loadCandidats();
-  }, [loadBureaux, loadCandidats, isAuthed]);
+    const participationLoader = tourActuel === 2 ? loadParticipationT2 : loadParticipationT1;
+
+    Promise.all([loadBureaux(), loadCandidats(), participationLoader()]).catch((e) => {
+      console.error("Erreur chargement Dashboard:", e);
+    });
+  }, [loadBureaux, loadCandidats, loadParticipationT1, loadParticipationT2, tourActuel, isAuthed]);
 
   /* ===========================
      CALCUL DES STATISTIQUES
      =========================== */
   useEffect(() => {
+    const participation = tourActuel === 2 ? participationT2 : participationT1;
+
+    const agg = calculService.calcParticipationCommune(participation);
+
     setStats({
-      bureaux: bureaux.length,
-      candidats: candidats.length,
-      totalInscrits: 0, // à calculer depuis Participation
-      totalVotants: 0,
-      tauxParticipation: 0,
+      bureaux: Array.isArray(bureaux) ? bureaux.length : 0,
+      candidats: Array.isArray(candidats) ? candidats.length : 0,
+      totalInscrits: agg.totalInscrits,
+      totalVotants: agg.totalVotants,
+      tauxParticipation: agg.tauxParticipation,
     });
-  }, [bureaux, candidats]);
+  }, [bureaux, candidats, participationT1, participationT2, tourActuel]);
 
   const {
-    tourActuel,
     tour1Verrouille,
     tour2Verrouille,
     dateT1,
@@ -170,9 +179,10 @@ export default function Dashboard({ onNavigate }) {
             <div className="stat-row large">
               <span className="label">Taux :</span>
               <span className="value participation-rate">
-                {stats.tauxParticipation.toFixed(2)} %
+                {Number.isFinite(stats.tauxParticipation) ? stats.tauxParticipation.toFixed(2) : "0.00"} %
               </span>
             </div>
+
             <button
               className="action-btn primary"
               onClick={() => onNavigate("participation")}

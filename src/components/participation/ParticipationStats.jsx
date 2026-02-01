@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 
 /**
@@ -10,9 +9,7 @@ import { useGoogleSheets } from '../../hooks/useGoogleSheets';
  *   (cas typique : saisie en cours, BV1 à 16h=523 et 17h/18h/19h/20h encore à 0).
  * - Cela évite les absurdités : "0 votants à 20h" et "abstention = inscrits" alors qu'il y a déjà des votants.
  */
-const ParticipationStats = () => {
-  const { state: electionState } = useElectionState();
-
+const ParticipationStats = ({ electionState}) => {
   // Bureaux
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
 

@@ -62,6 +62,7 @@ class GoogleSheetsService {
     return `'${safe}'!${range}`;
   }
 
+  
   /**
    * Normalise les noms d'onglets pour éviter les régressions (accents/variantes).
    * Ex: "Résultats_T1" -> "Resultats_T1"
@@ -81,7 +82,7 @@ class GoogleSheetsService {
     return mapped;
   }
 
-  async sleep(ms) {
+async sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
@@ -237,42 +238,51 @@ class GoogleSheetsService {
         }));
 
       case 'Candidats': {
-        /**
-         * IMPORTANT (compatibilité "Passage au 2nd tour"):
-         * - Le composant PassageSecondTour.jsx attend des champs: candidat.id et candidat.nom
-         * - Or l'application admin utilise: listeId / nomListe / ...
-         * => On conserve tous les champs existants ET on ajoute des alias non destructifs:
-         *    id = listeId (ex: L1..L5)
-         *    nom = nomListe (nom lisible de la liste)
-         */
-        return rows.map(row => {
-          const listeId = row[0] || '';
-          const nomListe = row[1] || '';
-          const teteListeNom = row[2] || '';
-          const teteListePrenom = row[3] || '';
+        // Mapping robuste des candidats :
+        // - Priorité au mapping par en-têtes (évite les décalages si une colonne est ajoutée/déplacée)
+        // - Fallback sur positions historiques si les en-têtes sont absents
+        const norm = (v) => String(v ?? '').trim().toLowerCase();
+        const idx = (...names) => {
+          for (const n of names) {
+            const i = header.findIndex((h) => norm(h) === norm(n));
+            if (i !== -1) return i;
+          }
+          return -1;
+        };
 
-          // "nom" doit être parlant dans les tableaux de résultats. On privilégie nomListe, sinon "Nom Prénom".
-          const nomFallback = [teteListeNom, teteListePrenom].filter(Boolean).join(' ').trim();
+        const toBool = (v) => {
+          if (v === true) return true;
+          if (v === false) return false;
+          if (typeof v === 'number') return v === 1;
+          const s = norm(v);
+          return s === 'true' || s === 'vrai' || s === 'oui' || s === '1' || s === 'x' || s === 'yes';
+        };
+
+        const iListeId = idx('listeid', 'id', 'listid', 'liste_id');
+        const iNomListe = idx('nomliste', 'liste', 'nom_liste', 'nom');
+        const iTeteNom = idx('tetelistenom', 'tete_nom', 'nom_tete', 'tetenom');
+        const iTetePrenom = idx('tetelisteprenom', 'tete_prenom', 'prenom_tete', 'tetepprenom');
+        const iCouleur = idx('couleur', 'color');
+        const iOrdre = idx('ordre', 'order', 'rang');
+        const iActifT1 = idx('actift1', 'actif_t1', 't1', 'tour1');
+        const iActifT2 = idx('actift2', 'actif_t2', 't2', 'tour2');
+
+        return rows.map((row) => {
+          const get = (i, fallbackIndex, fallback = '') =>
+            (i >= 0 ? row[i] : row[fallbackIndex]) ?? fallback;
 
           return {
-            // Champs existants (NE PAS MODIFIER)
-            listeId,
-            nomListe,
-            teteListeNom,
-            teteListePrenom,
-            couleur: row[4] || '#0055A4',
-            ordre: parseInt(row[5]) || 0,
-            actifT1: row[6] === 'TRUE' || row[6] === true,
-            actifT2: row[7] === 'TRUE' || row[7] === true,
-
-            // Alias de compatibilité (ajout, non destructif)
-            id: listeId,
-            nom: nomListe || nomFallback || listeId
+            listeId: get(iListeId, 0, '') || '',
+            nomListe: get(iNomListe, 1, '') || '',
+            teteListeNom: get(iTeteNom, 2, '') || '',
+            teteListePrenom: get(iTetePrenom, 3, '') || '',
+            couleur: get(iCouleur, 4, '#0055A4') || '#0055A4',
+            ordre: parseInt(get(iOrdre, 5, 0), 10) || 0,
+            actifT1: toBool(get(iActifT1, 6, false)),
+            actifT2: toBool(get(iActifT2, 7, false)),
           };
         });
-      }
-
-      case 'Participation_T1':
+      }case 'Participation_T1':
       case 'Participation_T2':
         // Mapping par en-têtes (évite les décalages quand une colonne est ajoutée/supprimée)
         // Colonnes attendues (Google Sheets) :
@@ -326,8 +336,7 @@ class GoogleSheetsService {
             timestamp: row[13] || ''
           };
         });
-
-      default:
+default:
         // Par défaut, retourner les lignes brutes
         return rows;
     }
@@ -346,20 +355,21 @@ class GoogleSheetsService {
       const rows = values.slice();
       const header = rows.length > 0 ? rows[0] : [];
       if (rows.length > 0) rows.shift(); // remove header
-
+      
       // Transformer les lignes en objets selon le sheetName
       const transformed = this._transformRows(normalizedSheet, rows, header);
-
+      
       // IMPORTANT : Ajouter rowIndex à chaque objet pour permettre update/delete
       const withRowIndex = transformed.map((obj, index) => ({
         ...obj,
         rowIndex: index
       }));
-
+      
       this._setCached(key, withRowIndex);
       return withRowIndex;
     });
   }
+
 
   /**
    * Convertit un objet métier en ligne (Array) dans l'ordre exact des colonnes Google Sheets.
@@ -426,14 +436,14 @@ class GoogleSheetsService {
   }
 
   async appendRow(sheetName, rowData) {
-    // NOTE: conserve la signature existante (appelée par useGoogleSheets)
-    // et délègue à appendRows (normalisation faite dans appendRows).
-    return await this.appendRows(sheetName, [this._toRow(this.normalizeSheetName(sheetName), rowData)]);
+    const normalizedSheet = this.normalizeSheetName(sheetName);
+    const row = this._toRow(sheetName, rowData);
+    return await this.appendRows(normalizedSheet, [row]);
   }
 
   async updateRow(sheetName, rowIndex, rowData) {
     const normalizedSheet = this.normalizeSheetName(sheetName);
-    const row = this._toRow(normalizedSheet, rowData);
+    const row = this._toRow(sheetName, rowData);
     const sheetRow = Number(rowIndex) + 2;
     const lastCol = this.colIndexToA1(Math.max(0, row.length - 1));
     const a1 = this.a1(normalizedSheet, `A${sheetRow}:${lastCol}${sheetRow}`);
@@ -552,6 +562,7 @@ class GoogleSheetsService {
     });
   }
 
+  
   // ==================== AUDIT / ERREURS ====================
 
   /**
@@ -562,6 +573,13 @@ class GoogleSheetsService {
   async logAudit(action, entity, entityId, before = {}, after = {}) {
     const ts = new Date().toISOString();
 
+    const normalizeCell = (v) => {
+      if (v === null || v === undefined) return "";
+      if (typeof v === "object") {
+        try { return JSON.stringify(v); } catch { return String(v); }
+      }
+      return v;
+    };
     const beforeJson = JSON.stringify(before ?? {});
     const afterJson = JSON.stringify(after ?? {});
     const userEmail = (authService.getUserEmail?.() || authService.getUser?.()?.email || '') || '';
@@ -598,7 +616,121 @@ class GoogleSheetsService {
     ]]);
   }
 
-  // ==================== UTILITAIRES ====================
+
+  /**
+   * Purge partielle du journal d'audit (feuille AUDIT_LOG) par tour.
+   * - Conserve la ligne d'en-tête si détectée
+   * - Supprime les lignes identifiées comme liées au tour demandé (T1/T2)
+   *
+   * Heuristique (robuste aux formats historiques) :
+   * - Format "logAudit" : [ts, action, entity, entityId, ...]
+   * - Format "AuditService.log" : [ts, user, action, detailsJson] avec detailsJson contenant {entity, entityId, ...}
+   */
+  async purgeAuditLogByTour(tour = 1) {
+    const sheetName = (SHEET_NAMES && SHEET_NAMES.AUDIT_LOG) ? SHEET_NAMES.AUDIT_LOG : 'AuditLog';
+    const a1 = this.a1(sheetName, 'A:Z');
+
+    const values = await this.getValues(a1);
+    if (!Array.isArray(values) || values.length === 0) {
+      return { removed: 0, kept: 0 };
+    }
+
+    const norm = (v) => String(v ?? '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase();
+
+    const safeStringify = (v) => {
+      try {
+        if (typeof v === 'string') return v;
+        return JSON.stringify(v);
+      } catch (_) {
+        try { return String(v); } catch { return ''; }
+      }
+    };
+
+    const headerCandidate = values[0] || [];
+    const headerJoined = norm(headerCandidate.join(' '));
+    const hasHeader =
+      headerJoined.includes('timestamp') ||
+      headerJoined.includes('date') ||
+      headerJoined.includes('action') ||
+      headerJoined.includes('utilisateur') ||
+      headerJoined.includes('user');
+
+    const header = hasHeader ? values[0] : null;
+    const dataRows = values.slice(hasHeader ? 1 : 0);
+
+    const reT = (tour === 2)
+      ? /(^|[^a-z0-9])t2([^a-z0-9]|$)/
+      : /(^|[^a-z0-9])t1([^a-z0-9]|$)/;
+
+    const reTourWord = (tour === 2) ? /tour2/ : /tour1/;
+
+    const isMatch = (row) => {
+      if (!Array.isArray(row)) return false;
+
+      // Format long (logAudit): entity/entityId en colonnes C/D
+      let entity = '';
+      let entityId = '';
+      let detailsStr = '';
+
+      if (row.length >= 7) {
+        entity = row[2] ?? '';
+        entityId = row[3] ?? '';
+        detailsStr = `${row[4] ?? ''} ${row[5] ?? ''}`.trim();
+      } else if (row.length >= 4) {
+        // Format court (AuditService.log): details JSON en colonne D
+        detailsStr = row[3] ?? '';
+      }
+
+      // Si details est un JSON (cas format court), tenter d'extraire entity/entityId
+      const det = String(detailsStr ?? '').trim();
+      if (det && (det.startsWith('{') || det.startsWith('['))) {
+        try {
+          const obj = JSON.parse(det);
+          entity = entity || (obj?.entity ?? obj?.sheet ?? '');
+          entityId = entityId || (obj?.entityId ?? obj?.id ?? '');
+          detailsStr = safeStringify(obj);
+        } catch (_) {
+          // ignore
+        }
+      }
+
+      const hay = `${norm(entity)} ${norm(entityId)} ${norm(detailsStr)}`;
+
+      return reT.test(hay) || reTourWord.test(hay);
+    };
+
+    const kept = [];
+    let removed = 0;
+
+    for (const row of dataRows) {
+      if (isMatch(row)) removed += 1;
+      else kept.push(row);
+    }
+
+    // Réécriture (clear + append) pour éviter la suppression ligne par ligne
+    await this.clearSheet(sheetName);
+
+    const out = [];
+    if (header) out.push(header);
+    out.push(...kept);
+
+    if (out.length > 0) {
+      await this.appendRows(sheetName, out);
+    }
+
+    // Invalidation caches + broadcast
+    this._cache.clear();
+    try {
+      window.dispatchEvent(new CustomEvent('sheets:changed', { detail: { sheetName } }));
+    } catch (_) {}
+
+    return { removed, kept: kept.length };
+  }
+
+// ==================== UTILITAIRES ====================
 
   async appendRows(sheetName, rows) {
     const normalizedSheet = this.normalizeSheetName(sheetName);

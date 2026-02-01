@@ -1,6 +1,4 @@
 import React, { useEffect, useState, useRef, useLayoutEffect } from "react";
-import { useElectionState } from "../../hooks/useElectionState";
-
 /**
  * Navigation principale de l'application
  * Menu contextuel selon le tour et l'état de verrouillage
@@ -9,9 +7,8 @@ import { useElectionState } from "../../hooks/useElectionState";
  * - L'état "Scrutin ouvert/clos" est informatif (heure locale).
  * - Les couleurs Tour 1 / Tour 2 s'inversent après la date du 1er tour.
  */
-const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSignOut }) => {
-  const { state } = useElectionState();
-  const { tourActuel, tour1Verrouille, tour2Verrouille } = state;
+const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSignOut, electionState }) => {
+  const { tourActuel, tour1Verrouille, tour2Verrouille } = electionState || {};
 
   const isTourLocked = (tourActuel === 1 && tour1Verrouille) || (tourActuel === 2 && tour2Verrouille);
 
@@ -64,7 +61,7 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
     { id: 'dashboard', label: '📊 Tableau de bord', page: 'dashboard', always: true },
     { id: 'participation', label: '📋 Participation', page: 'participation', show: true },
     { id: 'resultats', label: '🗳️ Résultats', page: 'resultats', show: true },
-    { id: 'passage-t2', label: '➡️ Passage T2', page: 'passage-t2', show: tourActuel === 1 && !tour1Verrouille },
+    { id: 'passage-t2', label: '➡️ Passage T2', page: 'passage-t2', show: true, disabled: !(tourActuel === 1 && !tour1Verrouille), disabledHint: 'Disponible uniquement en Tour 1 (non verrouillé).' },
     { id: 'sieges', label: '🪑 Sièges', page: 'sieges', show: true },
     { id: 'exports', label: '📄 Exports', page: 'exports', show: true },
     { id: 'admin', label: '⚙️ Administration', page: 'admin', show: true }
@@ -117,24 +114,14 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
         <div className="nav-header-right">
           <div className="election-status" role="status" aria-live="polite">
             <span
-              className={[
-                'tour-pill',
-                'tour-pill--t1',
-                `tour-pill--${t1Tone}`,
-                tourActuel === 1 ? 'is-active' : 'is-inactive'
-              ].join(' ')}
+              className={['tour-pill','tour-pill--t1', tourActuel === 1 ? 'is-active' : 'is-inactive'].join(' ')}
               aria-label="Tour 1"
             >
               1er Tour
             </span>
 
             <span
-              className={[
-                'tour-pill',
-                'tour-pill--t2',
-                `tour-pill--${t2Tone}`,
-                tourActuel === 2 ? 'is-active' : 'is-inactive'
-              ].join(' ')}
+              className={['tour-pill','tour-pill--t2', tourActuel === 2 ? 'is-active' : 'is-inactive'].join(' ')}
               aria-label="Tour 2"
             >
               2nd Tour
@@ -172,9 +159,11 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
             <li key={item.id}>
               <button
                 ref={(el) => { btnRefs.current[idx] = el; }}
-                className={`nav-item ${currentPage === item.page ? 'active' : ''}`}
-                onClick={() => onNavigate(item.page)}
-                type="button"
+                className={`nav-item ${currentPage === item.page ? 'active' : ''} ${item.disabled ? 'is-disabled' : ''}`}
+                  onClick={() => { if (!item.disabled) onNavigate(item.page); }}
+                  type="button"
+                  disabled={!!item.disabled}
+                  title={item.disabled ? (item.disabledHint || 'Indisponible') : ''}
               >
                 {item.label}
               </button>

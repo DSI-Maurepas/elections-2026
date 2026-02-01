@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 import auditService from '../../services/auditService';
 
@@ -7,8 +6,7 @@ import auditService from '../../services/auditService';
  * Saisie de la participation par bureau
  * Votants cumulés de 09h à 20h (1ère publication à 09h)
  */
-const ParticipationSaisie = () => {
-  const { state: electionState } = useElectionState();
+const ParticipationSaisie = ({ electionState, reloadElectionState }) => {
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
   const { 
     data: participation, 

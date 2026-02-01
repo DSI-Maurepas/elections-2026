@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import authService from '../services/authService';
 import googleSheetsService from '../services/googleSheetsService';
 import auditService from '../services/auditService';
+import { SHEET_NAMES } from '../utils/constants';
 
 /**
  * Hook personnalisé pour gérer l'état global de l'élection
@@ -113,7 +114,66 @@ export const useElectionState = () => {
         candidatsQualifies: JSON.stringify(candidats)
       });
 
-      await auditService.log('PASSAGE_T2', 'ELECTION', 'STATE', {}, {
+      
+      // Activation automatique des 2 candidats qualifiés pour le 2nd tour (ActifT2 = TRUE)
+      // IMPORTANT :
+      // - Les totaux T2 peuvent exister sans "résultats par candidat", mais l'affichage par candidat
+      //   dépend du flag ActifT2 dans l'onglet Candidats.
+      // - Best effort : ne doit jamais bloquer le passage au 2nd tour le jour J.
+      try {
+        const sheet = SHEET_NAMES.CANDIDATS;
+        const a1 = `${sheet}!A:H`; // A ListeID ... H ActifT2
+        const values = await googleSheetsService.getValues(a1);
+
+        if (Array.isArray(values) && values.length >= 2) {
+          const header = values[0] || [];
+          const rows = values.slice(1);
+
+          // Index de la colonne ActifT2 (fallback H)
+          const norm = (v) =>
+            String(v ?? '')
+              .trim()
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/\s+/g, '')
+              .replace(/[^a-z0-9_]/g, '');
+
+          const hmap = {};
+          header.forEach((h, i) => {
+            const k = norm(h);
+            if (k) hmap[k] = i;
+          });
+
+          const colListeId = hmap['listeid'] ?? 0;
+          const colActifT2 = hmap['actift2'] ?? 7;
+
+          const qualifiedIds = new Set(
+            candidats.map((c) => c?.listeId ?? c?.id ?? c).filter(Boolean)
+          );
+
+          // Met à jour chaque ligne : ActifT2 TRUE pour les qualifiés, FALSE pour les autres
+          for (let i = 0; i < rows.length; i++) {
+            const row = Array.isArray(rows[i]) ? rows[i].slice() : [];
+            // padding pour garantir la présence de la colonne H
+            while (row.length <= colActifT2) row.push('');
+
+            const listeId = row[colListeId];
+            const isQualified = qualifiedIds.has(listeId);
+
+            // Valeur attendue par l'app actuelle : 'TRUE'/'FALSE'
+            row[colActifT2] = isQualified ? 'TRUE' : 'FALSE';
+
+            // updateRow attend rowIndex 0-based (ligne de données). Il ajoute +2 pour sauter l'en-tête.
+            await googleSheetsService.updateRow(sheet, i, row);
+          }
+        } else {
+          console.warn('[PASSAGE T2] Onglet Candidats vide ou illisible : ActifT2 non mis à jour.');
+        }
+      } catch (e) {
+        console.warn('[PASSAGE T2] Mise à jour ActifT2 échouée (best effort):', e);
+      }
+await auditService.log('PASSAGE_T2', 'ELECTION', 'STATE', {}, {
         candidats: candidats.map(c => c.nom || c.nomListe || c.listeId)
       });
 

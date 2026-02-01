@@ -656,3 +656,19 @@
   }
 }
 /* === NAV FIX END === */
+
+
+/* === Tour pills: couleurs fixes par tour === */
+.tour-pill--t1 { border-color: #2E7D32 !important; }
+.tour-pill--t2 { border-color: #0055A4 !important; }
+
+.tour-pill.is-active { background: #fff; }
+.tour-pill.is-inactive { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.35) !important; }
+
+
+/* Nav item disabled (garder visible, non cliquable) */
+.nav-item.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.25);
+}

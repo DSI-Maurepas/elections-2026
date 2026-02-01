@@ -21,8 +21,7 @@ const getCandidateId = (c, idx) => {
   return `L${idx + 1}`;
 };
 
-const ResultatsClassement = () => {
-  const { state: electionState } = useElectionState();
+const ResultatsClassement = ({ electionState}) => {
   const tour = electionState?.activeTour || 1;
 
   const { resultats: resultatsRaw, candidats: candidatsRaw } = useGoogleSheets(tour);

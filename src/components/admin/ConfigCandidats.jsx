@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { useGoogleSheets } from "../../hooks/useGoogleSheets";
+import { SHEET_NAMES } from "../../utils/constants";
 
 /**
  * Admin - Candidats
  * Version "anti-sticky": 1ère colonne figée via 2 tableaux synchronisés.
  */
 const ConfigCandidats = () => {
-  const { data: candidats, load, loading } = useGoogleSheets("Candidats");
+  const { data: candidats, load, loading } = useGoogleSheets(SHEET_NAMES.CANDIDATS);
 
   useEffect(() => {
     load();

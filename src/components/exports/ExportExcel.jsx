@@ -1,17 +1,14 @@
 import React from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
 import exportService from '../../services/exportService';
+import uiService from '../../services/uiService';
 
-const ExportExcel = () => {
-  const { state } = useElectionState();
-
+const ExportExcel = ({ electionState}) => {
   const handleExport = async (type) => {
     try {
-      await exportService.exportExcel(type, state.tourActuel);
-      alert(`Excel ${type} téléchargé avec succès`);
+      await exportService.exportExcel(type, electionState?.tourActuel || 1);
     } catch (error) {
-      alert(`Erreur: ${error.message}`);
-    }
+      uiService.toast('error', { title: 'Export', message: `Erreur : ${error.message}` });
+}
   };
 
   return (

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { auditService } from '../services/auditService';
 import { googleSheetsService } from '../services/googleSheetsService';
+import uiService from '../services/uiService';
 
 const CandidateManager = ({ candidates, onRefresh }) => {
   const [newCandidate, setNewCandidate] = useState({
@@ -35,7 +36,7 @@ const CandidateManager = ({ candidates, onRefresh }) => {
       // 3. Reset & Refresh
       setNewCandidate({ nomListe: '', teteDeListe: '', couleur: '#00235a', averageAge: '' });
       onRefresh();
-      alert("Liste candidate ajoutée avec succès.");
+      uiService.toast('success', '✅ Liste candidate ajoutée avec succès');
     } catch (error) {
       console.error("Erreur ajout candidat:", error);
     }

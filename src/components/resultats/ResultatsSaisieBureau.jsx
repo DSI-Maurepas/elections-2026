@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 import { validateResultats } from '../../utils/validators';
 import auditService from '../../services/auditService';
 
-const ResultatsSaisieBureau = () => {
-  const { state: electionState } = useElectionState();
+const ResultatsSaisieBureau = ({ electionState}) => {
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
   const { data: candidats, load: loadCandidats } = useGoogleSheets('Candidats');
   const { 

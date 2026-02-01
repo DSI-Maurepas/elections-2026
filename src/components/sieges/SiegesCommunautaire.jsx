@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 import calculService from '../../services/calculService';
+import { useElectionState } from '../../hooks/useElectionState';
 
-const SiegesCommunautaire = () => {
+const SiegesCommunautaire = ({ electionState}) => {
   const { state } = useElectionState();
   const { data: candidats } = useGoogleSheets('Candidats');
   const { data: resultats } = useGoogleSheets(

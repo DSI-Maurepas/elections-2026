@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 
 /**
  * Tableau de consolidation de la participation
  * Vue globale tous bureaux confondus
  */
-const ParticipationTableau = () => {
-  const { state: electionState } = useElectionState();
+const ParticipationTableau = ({ electionState}) => {
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
   const { 
     data: participation, 

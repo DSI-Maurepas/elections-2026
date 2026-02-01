@@ -108,3 +108,22 @@
     --color-text: var(--color-gray-100);
   }
 }
+
+
+/* === Thèmes par tour (Ville) === */
+.theme-tour-1 {
+  /* Tour 1 : VERT semi-foncé (lisible, non flashy) */
+  --color-primary: #2E7D32;        /* vert principal */
+  --color-primary-dark: #1B5E20;   /* vert foncé */
+  --color-primary-light: #4CAF50;  /* vert clair maîtrisé */
+  --color-accent: #A5D6A7;         /* accent doux */
+}
+
+
+.theme-tour-2 {
+  /* Tour 2 : BLEU */
+  --color-primary: #0055A4;
+  --color-primary-dark: #003B73;
+  --color-primary-light: #2F74B8;
+  --color-accent: #9CC3E6;
+}

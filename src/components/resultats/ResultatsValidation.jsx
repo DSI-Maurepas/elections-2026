@@ -1,10 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 
-const ResultatsValidation = () => {
-  const { state: electionState } = useElectionState();
-
+const ResultatsValidation = ({ electionState}) => {
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
   const { data: resultats, load: loadResultats } = useGoogleSheets(
     electionState.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2'

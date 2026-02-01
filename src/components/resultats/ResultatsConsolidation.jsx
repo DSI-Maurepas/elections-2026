@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 
 /**
@@ -12,9 +11,7 @@ import { useGoogleSheets } from '../../hooks/useGoogleSheets';
  * - Ne touche pas à Participation
  * - Ne modifie pas les données dans Sheets (affichage/consolidation locale uniquement)
  */
-const ResultatsConsolidation = () => {
-  const { state: electionState } = useElectionState();
-
+const ResultatsConsolidation = ({ electionState}) => {
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
   const { data: candidats, load: loadCandidats } = useGoogleSheets('Candidats');
   const { data: resultats, load: loadResultats } = useGoogleSheets(

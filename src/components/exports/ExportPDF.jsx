@@ -1,23 +1,34 @@
 import React from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
 import exportService from '../../services/exportService';
+import uiService from '../../services/uiService';
+import auditService from '../../services/auditService';
 
-const ExportPDF = () => {
-  const { state } = useElectionState();
-
+const ExportPDF = ({ electionState}) => {
   const handleExport = async (type) => {
     try {
-      await exportService.exportPDF(type, state.tourActuel);
-      alert(`PDF ${type} généré avec succès`);
+      await exportService.exportPDF(type, electionState?.tourActuel || 1);
+
+      // ✅ AUCUN message de succès volontairement
+      // Le téléchargement / ouverture du PDF fait foi
+
+      // Audit NON bloquant (si disponible)
+      if (typeof auditService?.logExport === 'function') {
+        try {
+          await auditService.logExport(type, 'PDF');
+        } catch (e) {
+          console.warn('Audit export PDF non bloquant :', e);
+        }
+      }
     } catch (error) {
-      alert(`Erreur: ${error.message}`);
+      // ❌ Message UNIQUEMENT en cas d'erreur
+      uiService.toast('error', `Erreur : ${error.message}`);
     }
   };
 
   return (
     <div className="export-pdf">
       <h3>📄 Exports PDF</h3>
-      
+
       <div className="export-buttons">
         <button onClick={() => handleExport('participation')}>
           📋 PV Participation

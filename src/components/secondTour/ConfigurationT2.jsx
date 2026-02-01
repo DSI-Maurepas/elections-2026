@@ -1,10 +1,5 @@
 import React from 'react';
-import { useElectionState } from '../../hooks/useElectionState';
-
-const ConfigurationT2 = () => {
-  const { state } = useElectionState();
-
-  return (
+const ConfigurationT2 = ({ electionState}) => {  return (
     <div className="config-t2">
       <h2>⚙️ Configuration 2nd tour</h2>
 
@@ -21,7 +16,8 @@ const ConfigurationT2 = () => {
       >
         <p style={{ marginTop: 0, marginBottom: '0.75rem' }}>
           Cette section est réservée aux <strong>paramètres officiels</strong> du 2nd tour.
-          Les candidats qualifiés et leurs voix sont déjà affichés dans le bloc supérieur.
+          Le classement du 1er tour (proposition) est affiché au-dessus ; la <strong>qualification</strong> n’est effective
+          qu’après confirmation du passage au 2nd tour.
         </p>
 
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -36,7 +32,7 @@ const ConfigurationT2 = () => {
               Date du 2nd tour
             </div>
             <div style={{ marginTop: 6, fontSize: 18, fontWeight: 900 }}>
-              {state?.dateT2 ? new Date(state.dateT2).toLocaleDateString('fr-FR') : '—'}
+              {electionState?.dateT2 ? new Date(electionState.dateT2).toLocaleDateString('fr-FR') : '—'}
             </div>
           </div>
 
@@ -56,11 +52,16 @@ const ConfigurationT2 = () => {
           </div>
         </div>
 
-        {!state?.candidatsQualifies || state.candidatsQualifies.length !== 2 ? (
+        {!electionState?.candidatsQualifies || electionState.candidatsQualifies.length !== 2 ? (
           <div className="message warning" style={{ marginTop: '0.9rem' }}>
             Le passage au 2nd tour n'a pas encore été effectué.
           </div>
-        ) : null}
+        ) : (
+          <div className="message success" style={{ marginTop: '0.9rem' }}>
+            ✅ Passage au 2nd tour confirmé : <strong>{electionState.candidatsQualifies?.[0]?.nom || electionState.candidatsQualifies?.[0]?.nomListe}</strong> et{' '}
+            <strong>{electionState.candidatsQualifies?.[1]?.nom || electionState.candidatsQualifies?.[1]?.nomListe}</strong>
+          </div>
+        )}
       </div>
     </div>
   );
