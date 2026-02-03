@@ -65,8 +65,10 @@ function App() {
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState(null);
 
-  // État global élection (pour afficher / rafraîchir dans Administration)
-  const { state: electionState, loadState } = useElectionState();
+  // État global élection (SOURCE UNIQUE DE VÉRITÉ pour toute l'app)
+  // IMPORTANT: on expose aussi passerSecondTour pour éviter qu'une page instancie un second useElectionState
+  // (désynchronisations, besoin de rafraîchir, bascules qui "reviennent" après 0,5s, etc.)
+  const { state: electionState, loadState, passerSecondTour, revenirPremierTour } = useElectionState();
 
   // Optionnel : si authService persiste le token, on le relit au montage
   useEffect(() => {
@@ -171,39 +173,20 @@ function App() {
     const confirm2 = await uiService.confirm({
       title: "Confirmation finale",
       message:
-        "Confirmation finale :\n\n- tourActuel -> 1\n- passage T2 -> Inactif\n- verrous T1/T2 -> levés\n- candidats qualifiés -> vidés\n\nContinuer ?",
+        "Confirmation finale :\n\n- tourActuel -> 1\n- passage T2 -> Inactif\n- verrous T1/T2 -> levés\n- candidats qualifiés -> vidés\n- ActifT2 -> FALSE (tous candidats)\n\nContinuer ?",
       confirmText: "Oui, confirmer",
       cancelText: "Annuler"
     });
     if (!confirm2) return;
 
     try {
-      await googleSheetsService.updateElectionState({
-        tourActuel: 1,
-        tour1Verrouille: false,
-        tour2Verrouille: false,
-        secondTourEnabled: false,
-        candidatsQualifies: ""
-      });
-
-      // Audit non bloquant
-      try {
-        await auditService.log("RETOUR_T1", {
-          from: {
-            tourActuel: electionState?.tourActuel ?? null,
-            secondTourEnabled: electionState?.secondTourEnabled ?? null
-          }
-        });
-      } catch (e) {
-        console.warn("Audit RETOUR_T1 échoué:", e);
-      }
-
-      await loadState?.();
+      // Utilise la fonction du hook qui gère tout correctement
+      await revenirPremierTour();
       uiService.toast('success', { message: "✅ Retour au 1er tour effectué." });
-} catch (e) {
+    } catch (e) {
       console.error("Erreur RETOUR_T1:", e);
-      uiService.toast('info', { message: `Erreur : ${e?.message || "Erreur inconnue"}` });
-}
+      uiService.toast('error', { message: `Erreur : ${e?.message || "Erreur inconnue"}` });
+    }
   };
 
   // 🟧/🟩 Activer/Désactiver le passage au 2nd tour (admin uniquement)
@@ -449,22 +432,26 @@ Cette action n'exécute pas le passage au tour 2 : elle autorise ou bloque la co
     style={{ ...styles.smallBtn, ...(tourActuel === 1 ? styles.btnT2Blue : styles.btnT1), padding: "12px 18px", fontWeight: 900 }}
     onClick={async () => {
       const target = tourActuel === 1 ? 2 : 1;
-      const ok = await uiService.confirm(
-        target === 2
-          ? "Basculer l'application en TOUR 2 (actif) ?\n\nCette action ne confirme pas le passage officiel : elle change seulement le tour actif."
-          : "Basculer l'application en TOUR 1 (actif) ?\n\nCette action ne modifie pas les données : elle change seulement le tour actif."
-      );
+      const ok = await uiService.confirm({
+        title: "Bascule du tour actif",
+        message:
+          target === 2
+            ? "Basculer l'application en TOUR 2 (actif) ?\n\nCette action ne confirme pas le passage officiel : elle change seulement le tour actif."
+            : "Basculer l'application en TOUR 1 (actif) ?\n\nCette action ne modifie pas les données : elle change seulement le tour actif.",
+        confirmText: target === 2 ? "Basculer en T2" : "Basculer en T1",
+        cancelText: "Annuler",
+      });
       if (!ok) return;
       try {
         await googleSheetsService.updateElectionState({ tourActuel: target });
         await loadState?.();
-        uiService.toast("success", target === 2 ? "✅ TOUR 2 : Actif" : "✅ TOUR 1 : Actif");
+        uiService.toast({ type: "success", message: target === 2 ? "✅ TOUR 2 : Actif" : "✅ TOUR 1 : Actif" });
       } catch (e) {
-        uiService.toast("error", e?.message || "Erreur lors de la bascule");
+        uiService.toast({ type: "error", message: e?.message || "Erreur lors de la bascule" });
       }
     }}
   >
-    {tourActuel === 1 ? "Basculer vers Passage T2 : Autorisé" : "Basculer vers {tourActuel === 1 ? 'T1 : Actif (tour courant)' : 'T1 : Inactif'}"}
+    {tourActuel === 1 ? "Basculer vers Passage T2 : Autorisé" : "Basculer vers Passage T1 : Autorisé"}
   </button>
 </div>
 
@@ -543,47 +530,75 @@ Cette action n'exécute pas le passage au tour 2 : elle autorise ou bloque la co
       <div style={{ ...styles.panel("rgba(239, 68, 68, 0.10)"), width: "100%" }}>
         <h3 style={styles.panelTitle}>🚨 Bascule Tour (admin)</h3>
         <p style={styles.panelText}>
-          Bascule <strong>uniquement</strong> le <strong>tour actif</strong> (sans recalcul / sans modifier les données). À utiliser en dernier recours.
+          Contrôle de l'état global de l'application. Ces actions impactent directement Google Sheets et doivent être utilisées avec précaution.
         </p>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
-          <span style={styles.chip(tourActuel === 1 ? "green" : "red")}>
-            T1 : <strong>{tourActuel === 1 ? "Actif" : "Inactif"}</strong>
-          </span>
-          <span style={styles.chip(tourActuel === 2 ? "green" : "red")}>
-            T2 : <strong>{tourActuel === 2 ? "Actif" : "Inactif"}</strong>
-          </span>
+        {/* 4 boutons d'action sur une seule ligne */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+          {/* 1. Retour au 1er tour (état global) */}
+          <button
+            type="button"
+            className="action-btn"
+            style={{ ...styles.smallBtn, ...styles.btnT1, padding: "12px 18px", fontWeight: 900 }}
+            onClick={handleRetourPremierTour}
+            title="Réinitialise l'état global: tourActuel=1, verrous levés, passage T2 bloqué, qualifiés vidés"
+          >
+            Retour au 1er tour (état global)
+          </button>
 
-          <span style={{ ...styles.chip(secondTourEnabled ? "green" : "red"), marginLeft: 8 }}>
-            Passage T2 : <strong>{secondTourEnabled ? "Autorisé" : "Bloqué"}</strong>
-          </span>
+          {/* 2. Basculer vers Passage T2 : Autorisé */}
+          <button
+            type="button"
+            className="action-btn"
+            style={{ ...styles.smallBtn, ...styles.btnDanger, padding: "12px 18px", fontWeight: 900 }}
+            onClick={async () => {
+              const target = tourActuel === 1 ? 2 : 1;
+              const ok = await uiService.confirm({
+                title: 'Bascule Tour (admin)',
+                message:
+                  target === 2
+                    ? "Basculer l'application en TOUR 2 (actif) ?\n\nCette action ne confirme pas le passage officiel : elle change seulement le tour actif."
+                    : "Basculer l'application en TOUR 1 (actif) ?\n\nCette action ne modifie pas les données : elle change seulement le tour actif.",
+                confirmText: target === 2 ? 'Basculer en Tour 2' : 'Basculer en Tour 1',
+                cancelText: 'Annuler',
+              });
+              if (!ok) return;
+
+              try {
+                await googleSheetsService.updateElectionState({ tourActuel: target });
+                await loadState?.();
+                uiService.toast({ type: "success", message: target === 2 ? "✅ TOUR 2 : Actif" : "✅ TOUR 1 : Actif" });
+              } catch (e) {
+                uiService.toast({ type: "error", message: e?.message || "Erreur lors de la bascule" });
+              }
+            }}
+            title={tourActuel === 1 ? "Basculer vers Passage T2 : Autorisé" : "Basculer vers Passage T1 : Autorisé"}
+          >
+            {tourActuel === 1 ? "Basculer vers Passage T2 : Autorisé" : "Basculer vers Passage T1 : Autorisé"}
+          </button>
+
+          {/* 3. Autoriser Passage T2 */}
+          <button
+            type="button"
+            className="action-btn"
+            style={{ ...styles.smallBtn, ...styles.btnT2Blue, padding: "12px 18px", fontWeight: 900 }}
+            onClick={() => handleSetSecondTourEnabled(true)}
+            title="Autorise la confirmation du passage au 2nd tour dans la page Passage au 2nd tour"
+          >
+            Autoriser Passage T2
+          </button>
+
+          {/* 4. Bloquer Passage T2 */}
+          <button
+            type="button"
+            className="action-btn"
+            style={{ ...styles.smallBtn, ...styles.btnDanger, padding: "12px 18px", fontWeight: 900 }}
+            onClick={() => handleSetSecondTourEnabled(false)}
+            title="Bloque la confirmation du passage au 2nd tour"
+          >
+            Bloquer Passage T2
+          </button>
         </div>
-
-        <button
-          type="button"
-          className="action-btn"
-          style={{ ...styles.smallBtn, ...styles.btnDanger, padding: "12px 18px", fontWeight: 900 }}
-          onClick={async () => {
-            const target = tourActuel === 1 ? 2 : 1;
-            const ok = await uiService.confirm(
-              target === 2
-                ? "Basculer l'application en TOUR 2 (actif) ?\n\nCette action ne confirme pas le passage officiel : elle change seulement le tour actif."
-                : "Basculer l'application en TOUR 1 (actif) ?\n\nCette action ne modifie pas les données : elle change seulement le tour actif."
-            );
-            if (!ok) return;
-
-            try {
-              await googleSheetsService.updateElectionState({ tourActuel: target });
-              await loadState?.(); // rafraîchit l'état en mémoire => UI & navigation sans F5
-              uiService.toast("success", target === 2 ? "✅ TOUR 2 : Actif" : "✅ TOUR 1 : Actif");
-            } catch (e) {
-              uiService.toast("error", e?.message || "Erreur lors de la bascule");
-            }
-          }}
-          title={tourActuel === 1 ? "Basculer vers Passage T2 : Autorisé" : "Basculer vers Passage T1 : Autorisé"}
-        >
-          {tourActuel === 1 ? "Basculer vers Passage T2 : Autorisé" : "Basculer vers Passage T1 : Autorisé"}
-        </button>
       </div>
     );
   };
@@ -603,49 +618,30 @@ Cette action n'exécute pas le passage au tour 2 : elle autorise ou bloque la co
       </div>
 
       {/* UI Confirm Modal */}
-      {uiConfirm.open ? (
-        <div className="ui-modal-backdrop" role="dialog" aria-modal="true">
-          <div className="ui-modal">
-            <div className="ui-modal-title">{uiConfirm.title || "Confirmation"}</div>
-            <div className="ui-modal-message">{uiConfirm.message}</div>
-            <div className="ui-modal-actions">
-              <button
-                type="button"
-                className="action-btn btn-compact"
-                onClick={() => {
-                  uiConfirm._resolve?.(false);
-                  setUiConfirm((prev) => ({ ...prev, open: false, _resolve: null }));
-                }}
-              >
-                {uiConfirm.cancelText || "Annuler"}
-              </button>
-              <button
-                type="button"
-                className="action-btn primary btn-compact"
-                onClick={() => {
-                  uiConfirm._resolve?.(true);
-                  setUiConfirm((prev) => ({ ...prev, open: false, _resolve: null }));
-                }}
-              >
-                {uiConfirm.confirmText || "Confirmer"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
     </div>
   );
 
   const renderAdminTablesStyle = () => (
     <style>{`
+            /* ===== Admin: boutons texte noir ===== */
+      .admin-page .action-btn{ color: #000 !important; }
+      .admin-page .action-btn.primary{ color: #fff !important; }
+
       /* ====== Boutons : même taille en responsive ====== */
       .btn-compact{ width: fit-content; }
       @media (max-width: 640px){
         .btn-compact{ width: 100% !important; justify-content: center; }
       }
 
-      /* ====== TABLES ADMIN: lisibilité + arrondis + zébrage ====== */
+      /* ====== ADMIN BUTTONS: texte NOIR (sauf boutons .primary) ====== */
+      .page-container .action-btn{ color: #000 !important; }
+      .page-container .action-btn.primary{ color: #fff !important; }
+
+      
+      .admin-page .action-btn{ color: #000 !important; }
+      .admin-page .action-btn.primary{ color: #fff !important; }
+/* ====== TABLES ADMIN: lisibilité + arrondis + zébrage ====== */
       .admin-table, .audit-table {
         width: 100%;
         border-collapse: separate;
@@ -729,7 +725,12 @@ Cette action n'exécute pas le passage au tour 2 : elle autorise ou bloque la co
         if (!isAuthenticated) return renderAuthGate();
         return (
           <div className="page-container">
-            <PassageSecondTour electionState={electionState} reloadElectionState={loadState} isAdminAuthenticated={isAdminAuthenticated} />
+            <PassageSecondTour
+              electionState={electionState}
+              passerSecondTour={passerSecondTour}
+              reloadElectionState={loadState}
+              isAdminAuthenticated={isAdminAuthenticated}
+            />
             <ConfigurationT2 electionState={electionState} />
           </div>
         );
@@ -755,7 +756,7 @@ Cette action n'exécute pas le passage au tour 2 : elle autorise ou bloque la co
       case "admin":
         if (!isAuthenticated) return renderAuthGate();
         return (
-          <div className="page-container">
+          <div className="page-container admin-page">
             {renderAdminModal()}
             {renderAdminTablesStyle()}
 
@@ -834,36 +835,87 @@ Cette action n'exécute pas le passage au tour 2 : elle autorise ou bloque la co
       </div>
 
       {/* UI Confirm Modal */}
-      {uiConfirm.open ? (
-        <div className="ui-modal-backdrop" role="dialog" aria-modal="true">
-          <div className="ui-modal">
-            <div className="ui-modal-title">{uiConfirm.title || "Confirmation"}</div>
-            <div className="ui-modal-message">{uiConfirm.message}</div>
-            <div className="ui-modal-actions">
+      {uiConfirm.open && (
+        <div 
+          className="ui-modal-overlay" 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+          }}
+          onClick={() => {
+            setUiConfirm({ ...uiConfirm, open: false });
+            if (uiConfirm._resolve) uiConfirm._resolve(false);
+          }}>
+          <div className="ui-modal-content" 
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '16px',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4)',
+              maxWidth: '500px',
+              width: '90%',
+              maxHeight: '90vh',
+              overflow: 'auto',
+            }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="ui-modal-header" style={{ padding: '24px 24px 16px 24px', borderBottom: '1px solid rgba(0, 0, 0, 0.1)' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#1a1a1a' }}>
+                {uiConfirm.title || 'Confirmation'}
+              </h3>
+            </div>
+            <div className="ui-modal-body" style={{ padding: '24px' }}>
+              <p style={{ margin: 0, color: '#4a4a4a', lineHeight: 1.6, fontSize: '0.95rem', whiteSpace: 'pre-wrap' }}>
+                {uiConfirm.message}
+              </p>
+            </div>
+            <div className="ui-modal-footer" style={{ padding: '16px 24px 24px 24px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button
-                type="button"
-                className="action-btn btn-compact"
+                className="action-btn"
+                style={{ 
+                  backgroundColor: '#6B7280', 
+                  color: '#fff',
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  border: 'none',
+                }}
                 onClick={() => {
-                  uiConfirm._resolve?.(false);
-                  setUiConfirm((prev) => ({ ...prev, open: false, _resolve: null }));
+                  setUiConfirm({ ...uiConfirm, open: false });
+                  if (uiConfirm._resolve) uiConfirm._resolve(false);
                 }}
               >
-                {uiConfirm.cancelText || "Annuler"}
+                {uiConfirm.cancelText || 'Annuler'}
               </button>
               <button
-                type="button"
-                className="action-btn primary btn-compact"
+                className="action-btn primary"
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  border: 'none',
+                }}
                 onClick={() => {
-                  uiConfirm._resolve?.(true);
-                  setUiConfirm((prev) => ({ ...prev, open: false, _resolve: null }));
+                  setUiConfirm({ ...uiConfirm, open: false });
+                  if (uiConfirm._resolve) uiConfirm._resolve(true);
                 }}
               >
-                {uiConfirm.confirmText || "Confirmer"}
+                {uiConfirm.confirmText || 'Confirmer'}
               </button>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
 
     </div>
   );

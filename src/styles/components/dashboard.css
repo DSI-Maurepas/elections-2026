@@ -117,3 +117,29 @@
   background: #FFF3E0;
   border-left: 4px solid #FF9800;
 }
+
+/* Badges de tour harmonisés avec le header */
+.tour-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1e3c72;
+  border: 2px solid;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.tour-badge.tour-1 {
+  border-color: #2E7D32;
+  box-shadow: 0 4px 12px rgba(46, 125, 50, 0.3), inset 0 0 0 1px rgba(46, 125, 50, 0.15);
+}
+
+.tour-badge.tour-2 {
+  border-color: #0055A4;
+  box-shadow: 0 4px 12px rgba(0, 85, 164, 0.3), inset 0 0 0 1px rgba(0, 85, 164, 0.15);
+}

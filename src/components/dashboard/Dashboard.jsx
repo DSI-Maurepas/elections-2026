@@ -66,9 +66,21 @@ export default function Dashboard({ onNavigate, electionState }) {
 
     const agg = calculService.calcParticipationCommune(participation);
 
+    // Compte uniquement les candidats actifs pour le tour en cours
+    let nbCandidats = 0;
+    if (Array.isArray(candidats)) {
+      if (tourActuel === 2) {
+        // Tour 2 : compter uniquement ceux avec actifT2 = TRUE
+        nbCandidats = candidats.filter(c => c.actifT2 === true).length;
+      } else {
+        // Tour 1 : compter uniquement ceux avec actifT1 = TRUE
+        nbCandidats = candidats.filter(c => c.actifT1 === true).length;
+      }
+    }
+
     setStats({
       bureaux: Array.isArray(bureaux) ? bureaux.length : 0,
-      candidats: Array.isArray(candidats) ? candidats.length : 0,
+      candidats: nbCandidats,
       totalInscrits: agg.totalInscrits,
       totalVotants: agg.totalVotants,
       tauxParticipation: agg.tauxParticipation,

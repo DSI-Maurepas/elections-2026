@@ -237,52 +237,19 @@ async sleep(ms) {
           actif: row[7] === 'TRUE' || row[7] === true
         }));
 
-      case 'Candidats': {
-        // Mapping robuste des candidats :
-        // - Priorité au mapping par en-têtes (évite les décalages si une colonne est ajoutée/déplacée)
-        // - Fallback sur positions historiques si les en-têtes sont absents
-        const norm = (v) => String(v ?? '').trim().toLowerCase();
-        const idx = (...names) => {
-          for (const n of names) {
-            const i = header.findIndex((h) => norm(h) === norm(n));
-            if (i !== -1) return i;
-          }
-          return -1;
-        };
+      case 'Candidats':
+        return rows.map(row => ({
+          listeId: row[0] || '',
+          nomListe: row[1] || '',
+          teteListeNom: row[2] || '',
+          teteListePrenom: row[3] || '',
+          couleur: row[4] || '#0055A4',
+          ordre: parseInt(row[5]) || 0,
+          actifT1: String(row[6] ?? '').trim().toUpperCase() === 'TRUE',
+          actifT2: row[7] === 'TRUE' || row[7] === true
+        }));
 
-        const toBool = (v) => {
-          if (v === true) return true;
-          if (v === false) return false;
-          if (typeof v === 'number') return v === 1;
-          const s = norm(v);
-          return s === 'true' || s === 'vrai' || s === 'oui' || s === '1' || s === 'x' || s === 'yes';
-        };
-
-        const iListeId = idx('listeid', 'id', 'listid', 'liste_id');
-        const iNomListe = idx('nomliste', 'liste', 'nom_liste', 'nom');
-        const iTeteNom = idx('tetelistenom', 'tete_nom', 'nom_tete', 'tetenom');
-        const iTetePrenom = idx('tetelisteprenom', 'tete_prenom', 'prenom_tete', 'tetepprenom');
-        const iCouleur = idx('couleur', 'color');
-        const iOrdre = idx('ordre', 'order', 'rang');
-        const iActifT1 = idx('actift1', 'actif_t1', 't1', 'tour1');
-        const iActifT2 = idx('actift2', 'actif_t2', 't2', 'tour2');
-
-        return rows.map((row) => {
-          const get = (i, fallbackIndex, fallback = '') =>
-            (i >= 0 ? row[i] : row[fallbackIndex]) ?? fallback;
-
-          return {
-            listeId: get(iListeId, 0, '') || '',
-            nomListe: get(iNomListe, 1, '') || '',
-            teteListeNom: get(iTeteNom, 2, '') || '',
-            teteListePrenom: get(iTetePrenom, 3, '') || '',
-            couleur: get(iCouleur, 4, '#0055A4') || '#0055A4',
-            ordre: parseInt(get(iOrdre, 5, 0), 10) || 0,
-            actifT1: toBool(get(iActifT1, 6, false)),
-            actifT2: toBool(get(iActifT2, 7, false)),
-          };
-        });
-      }case 'Participation_T1':
+      case 'Participation_T1':
       case 'Participation_T2':
         // Mapping par en-têtes (évite les décalages quand une colonne est ajoutée/supprimée)
         // Colonnes attendues (Google Sheets) :
@@ -526,44 +493,105 @@ default:
       const state = {};
       rows.forEach(([k, v]) => { if (k) state[k] = this.parseSheetValue(v); });
 
-      this._setCached(key, state);
+      
+// Compat: certaines versions historiques stockent le tour sous CURRENT_TOUR
+if (state.tourActuel === undefined && state.CURRENT_TOUR !== undefined) {
+  state.tourActuel = state.CURRENT_TOUR;
+}
+this._setCached(key, state);
       return state;
     });
   }
 
-  async updateElectionState(keyOrObject, value) {
-    if (keyOrObject && typeof keyOrObject === 'object' && !Array.isArray(keyOrObject)) {
-      for (const [k, v] of Object.entries(keyOrObject)) {
-        await this.updateElectionState(k, v);
-      }
-      return;
+  
+async updateElectionState(keyOrObject, value) {
+  // Support:
+  // - updateElectionState('tourActuel', 1)
+  // - updateElectionState({ tourActuel: 1, secondTourEnabled: false })
+  const isObj =
+    keyOrObject && typeof keyOrObject === 'object' && !Array.isArray(keyOrObject);
+
+  const patch = isObj ? keyOrObject : { [keyOrObject]: value };
+
+  const normKey = (k) => String(k ?? '').trim();
+  const a1 = this.a1(SHEET_NAMES.ELECTIONS_STATE, 'A:C');
+
+  // Lire une fois pour localiser les lignes existantes
+  const values = await this.getValues(a1);
+  const startIndex =
+    values.length > 0 && String(values[0][0]).toLowerCase().includes('key') ? 1 : 0;
+
+  // Map: key -> absoluteRowNumber (1-based in sheet)
+  const keyToAbsRow = new Map();
+  for (let i = startIndex; i < values.length; i++) {
+    const k = normKey(values[i]?.[0]);
+    if (k) keyToAbsRow.set(k, i + 1); // +1 because values[] is 0-based but sheet rows are 1-based
+  }
+
+  // Compat: si on met à jour tourActuel, et que CURRENT_TOUR existe, on le met à jour aussi
+  if (Object.prototype.hasOwnProperty.call(patch, 'tourActuel')) {
+    const hasCurrentTour = keyToAbsRow.has('CURRENT_TOUR');
+    const hasInPatch = Object.prototype.hasOwnProperty.call(patch, 'CURRENT_TOUR');
+    if (hasCurrentTour && !hasInPatch) {
+      patch.CURRENT_TOUR = patch.tourActuel;
     }
+  }
 
-    const key = keyOrObject;
-    const a1 = this.a1(SHEET_NAMES.ELECTIONS_STATE, 'A:C');
-    const values = await this.getValues(a1);
+  const timestamp = new Date().toISOString();
+  const batchData = [];
+  const toAppend = [];
 
-    const startIndex = (values.length > 0 && String(values[0][0]).toLowerCase().includes('key')) ? 1 : 0;
-    const rowIndex = values.slice(startIndex).findIndex(([k]) => k === key);
-    const timestamp = new Date().toISOString();
+  for (const [k0, v] of Object.entries(patch)) {
+    const k = normKey(k0);
+    if (!k) continue;
 
-    this._cache.clear();
+    const absRow = keyToAbsRow.get(k);
 
-    if (rowIndex === -1) {
-      return await this.appendRows(SHEET_NAMES.ELECTIONS_STATE, [[key, value, timestamp]]);
+    if (!absRow) {
+      // Ajout d'une nouvelle clé
+      toAppend.push([k, v, timestamp]);
+    } else {
+      const updateA1 = this.a1(SHEET_NAMES.ELECTIONS_STATE, `B${absRow}:C${absRow}`);
+      batchData.push({ range: updateA1, values: [[v, timestamp]] });
     }
+  }
 
-    const absoluteRow = rowIndex + startIndex + 1;
-    const updateA1 = this.a1(SHEET_NAMES.ELECTIONS_STATE, `B${absoluteRow}:C${absoluteRow}`);
+  // Invalidation caches AVANT les appels réseau suivants (pour éviter relire une valeur obsolète)
+  try {
+    for (const k of Array.from(this._cache.keys())) {
+      if (String(k).startsWith('getElectionState:')) this._cache.delete(k);
+    }
+    for (const k of Array.from(this._inflight.keys())) {
+      if (String(k).startsWith('getElectionState:')) this._inflight.delete(k);
+    }
+  } catch (e) {
+    console.warn('Cache invalidation failed (getElectionState):', e);
+  }
+  // Invalidation globale (best effort)
+  this._cache.clear();
 
-    return await this.makeRequest(`/values/${encodeURIComponent(updateA1)}?valueInputOption=USER_ENTERED`, {
-      method: 'PUT',
-      body: JSON.stringify({ values: [[value, timestamp]] }),
+  // 1) Updates existants via batchUpdate
+  if (batchData.length > 0) {
+    await this.makeRequest('/values:batchUpdate', {
+      method: 'POST',
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: batchData }),
     });
   }
 
-  
-  // ==================== AUDIT / ERREURS ====================
+  // 2) Append des nouvelles lignes en une fois
+  if (toAppend.length > 0) {
+    await this.appendRows(SHEET_NAMES.ELECTIONS_STATE, toAppend);
+  }
+
+  // Broadcast UI (best effort)
+  try {
+    window.dispatchEvent(new CustomEvent('sheets:changed', { detail: { sheetName: SHEET_NAMES.ELECTIONS_STATE } }));
+  } catch (_) {}
+
+  return { updated: batchData.length, appended: toAppend.length };
+}
+
+// ==================== AUDIT / ERREURS ====================
 
   /**
    * Journalise une action métier dans la feuille AUDIT_LOG.

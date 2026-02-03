@@ -1,5 +1,6 @@
 /* src/styles/App.css */
 @import './variables.css';
+@import './components/sieges.css';
 
 /* Reset et base */
 * {

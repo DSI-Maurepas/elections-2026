@@ -3,8 +3,6 @@
 
 import { GOOGLE_SHEETS, LOCAL_STORAGE_KEYS } from '../utils/constants';
 
-let __gisInteractiveInFlight = false; // empêche l'ouverture de popups multiples
-
 // --- Auth Admin (mot de passe local) ---
 // NOTE: Auth "Administration" volontairement locale (pas Google OAuth). Usage interne jour J.
 // Stockage: localStorage (session persistante dans le navigateur).

@@ -22,9 +22,12 @@ const AuditLog = () => {
     setError(null);
 
     const label = tour === 2 ? '2nd tour' : 'tour 1';
-    const ok = await uiService.confirm(
-      `Purger le journal d'audit pour le ${label} ?\n\nCette action est irréversible.`
-    );
+    const ok = await uiService.confirm({
+      title: "Purger le journal d'audit",
+      message: `Purger le journal d'audit pour le ${label} ?\n\nCette action est irréversible.`,
+      confirmText: "Purger",
+      cancelText: "Annuler",
+    });
     if (!ok) return;
 
     try {
