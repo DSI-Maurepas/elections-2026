@@ -89,11 +89,6 @@ const ResultatsClassement = ({ electionState}) => {
               <div className="top3-stats">
                 <div className="top3-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</div>
                 <div className="top3-pct">{candidat.pct.toFixed(2)}%</div>
-                <div className="top3-bar">
-                  <div className="bar-track">
-                    <div className="bar-fill" style={{ width: `${Math.min(100, candidat.pct)}%`, background: color }} />
-                  </div>
-                </div>
               </div>
             </div>
           );

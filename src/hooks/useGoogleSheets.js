@@ -12,6 +12,7 @@ export const useGoogleSheets = (sheetName) => {
 
   const lastFiltersRef = useRef({});
   const reloadTimerRef = useRef(null);
+  const hasLoadedOnceRef = useRef(false);
 
   // Charger les données
   const load = useCallback(async (filters = {}) => {
@@ -22,6 +23,9 @@ export const useGoogleSheets = (sheetName) => {
       
       const result = await googleSheetsService.getData(sheetName, filters);
       setData(result);
+
+      // Marqueur : utile pour auto-load au montage sans provoquer de boucles.
+      hasLoadedOnceRef.current = true;
       
       return result;
     } catch (err) {
@@ -32,6 +36,16 @@ export const useGoogleSheets = (sheetName) => {
       setLoading(false);
     }
   }, [sheetName]);
+
+  // Auto-chargement au montage (et lors d'un changement de sheetName)
+  // IMPORTANT : certaines vues consomment uniquement `data` sans appeler `load()`.
+  // La déduplication/caching du service évite les sur-appels en cas de load concurrent.
+  useEffect(() => {
+    if (!sheetName) return;
+    if (hasLoadedOnceRef.current) return;
+    load(lastFiltersRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetName, load]);
 
   // Debounce reload pour éviter de dépasser les quotas Sheets en cas d'enchaînement d'écritures
   const scheduleReload = useCallback(() => {

@@ -1542,3 +1542,56 @@
   font-weight: 900;
   box-shadow: 0 10px 20px rgba(0,0,0,0.12);
 }
+
+/* ================================================================
+   RESPONSIVE - VERSION MOBILE RÉSULTATS
+   Masquage bloc validation + ajustement titre
+   ================================================================ */
+
+@media (max-width: 768px) {
+  /* Masquer le bloc "Validation des résultats" en mobile */
+  .resultats-validation {
+    display: none !important;
+  }
+
+  /* Titre "Résultats par candidat :" - empêcher ":" seul sur ligne */
+  .resultats-candidats h3 {
+    display: inline-block;
+    word-spacing: -0.05em;
+  }
+
+  /* Alternative : forcer le texte sur une seule ligne si nécessaire */
+  .resultats-candidats h3::after {
+    content: "";
+    display: inline-block;
+    width: 0;
+  }
+
+  /* Ajuster la taille du titre pour mobile */
+  .resultats-candidats h3 {
+    font-size: 1.2rem;
+    line-height: 1.4;
+    margin-bottom: 1rem;
+  }
+
+  /* Tableau candidats responsive */
+  .candidats-table--responsive {
+    font-size: 0.85rem;
+  }
+
+  .candidats-table--responsive th,
+  .candidats-table--responsive td {
+    padding: 0.6rem 0.4rem;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Sur très petits écrans */
+  .resultats-candidats h3 {
+    font-size: 1.1rem;
+  }
+
+  .candidats-table--responsive {
+    font-size: 0.8rem;
+  }
+}

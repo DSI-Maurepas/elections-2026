@@ -143,3 +143,30 @@
   border-color: #0055A4;
   box-shadow: 0 4px 12px rgba(0, 85, 164, 0.3), inset 0 0 0 1px rgba(0, 85, 164, 0.15);
 }
+
+/* ================================================================
+   RESPONSIVE - VERSION MOBILE ALLÉGÉE
+   Ne modifie QUE la version mobile/tablette
+   ================================================================ */
+
+@media (max-width: 768px) {
+  /* Masquer le bloc Actions rapides en mobile */
+  .dashboard-card.actions {
+    display: none !important;
+  }
+
+  /* Optimiser la grille du dashboard pour mobile */
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Garder seulement État de l'élection, Configuration, et Participation */
+  /* Les autres blocs sont automatiquement cachés car ils n'existent pas dans le HTML */
+}
+
+@media (max-width: 480px) {
+  /* Sur très petits écrans */
+  .dashboard-card.actions {
+    display: none !important;
+  }
+}

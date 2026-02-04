@@ -354,7 +354,7 @@ const ResultatsConsolidation = ({ electionState}) => {
 
       {/* Résultats par candidat */}
       <div className="resultats-candidats">
-        <h3>🧑‍💼 Résultats par candidat :</h3>
+        <h3>🧑‍💼 Résultats par candidat&nbsp;:</h3>
 
         <table className="candidats-table candidats-table--responsive">
           <thead>
@@ -363,7 +363,7 @@ const ResultatsConsolidation = ({ electionState}) => {
               <th>Voix</th>
               <th>%</th>
               <th>Statut</th>
-              <th style={{ width: '36%' }}>Barre</th>
+              <th style={{ width: '36%' }}>Proportion</th>
             </tr>
           </thead>
           <tbody>
@@ -463,10 +463,10 @@ const ResultatsConsolidation = ({ electionState}) => {
           style={{
             marginTop: 22,
             borderRadius: 18,
-            border: '1px solid rgba(15, 23, 42, 0.12)',
-            boxShadow: '0 14px 30px rgba(2, 6, 23, 0.10)',
+            border: '1px solid rgba(15, 23, 42, 0.42)',
+            boxShadow: '0 14px 30px rgba(2, 6, 23, 0.50)',
             background:
-              'linear-gradient(135deg, rgba(59, 130, 246, 0.10) 0%, rgba(255,255,255,0.95) 55%, rgba(34, 197, 94, 0.08) 100%)',
+              'linear-gradient(135deg, rgba(59, 130, 246, 0.70) 0%, rgba(255,255,255,0.75) 55%, rgba(34, 197, 94, 0.08) 100%)',
             padding: '16px 16px 14px 16px',
           }}
         >
@@ -518,7 +518,7 @@ const ResultatsConsolidation = ({ electionState}) => {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                       Top 2 qualifiés
+                       Les 2 listes qualifiées
                     </span>
                   )}
                 </div>
@@ -574,7 +574,7 @@ const ResultatsConsolidation = ({ electionState}) => {
                       key={c.listeId || idx}
                       style={{
                         borderRadius: 16,
-                        padding: '10px 12px',
+                        padding: '10px 22px',
                         background: 'rgba(255,255,255,0.92)',
                         border: `2px solid ${isQualifie ? color : 'rgba(15, 23, 42, 0.10)'}`,
                         boxShadow: '0 10px 18px rgba(2, 6, 23, 0.08)',
@@ -586,15 +586,15 @@ const ResultatsConsolidation = ({ electionState}) => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <span
                                 style={{
-                                  width: 14,
-                                  height: 28,
+                                  width: 50,
+                                  height: 18,
                                   borderRadius: 999,
                                   background: color,
                                   boxShadow: '0 0 0 5px rgba(15, 23, 42, 0.06)',
                                   flex: '0 0 auto',
                                 }}
                               />
-                              <span style={{ fontWeight: 900, fontSize: '1.05rem', color: '#0f172a' }}>
+                              <span style={{ fontWeight: 900, fontSize: '1rem', color: '#0f172a' }}>
                                 {c.displayName || getCandidateDisplayName(c)}
                               </span>
                               {isQualifie && (
@@ -612,11 +612,11 @@ const ResultatsConsolidation = ({ electionState}) => {
                                     whiteSpace: 'nowrap',
                                   }}
                                 >
-                                  ✅ Qualifié
+                                  ✅ Liste qualifiée
                                 </span>
                               )}
                             </div>
-                            <div style={{ marginTop: 3, color: 'rgba(15,23,42,0.70)', fontWeight: 800 }}>
+                            <div style={{ marginTop: 1, color: 'rgba(15,23,42,0.70)', fontWeight: 1000 }}>
                               {voix.toLocaleString('fr-FR')} voix · {pct.toFixed(2)}%
                             </div>
                           </div>
@@ -644,50 +644,14 @@ const ResultatsConsolidation = ({ electionState}) => {
 
                       {/* Barre relative au 1er (max voix) */}
                       <div style={{ marginTop: 10 }}>
-                        <div
-                          style={{
-                            height: 14,
-                            borderRadius: 999,
-                            background: 'rgba(15, 23, 42, 0.10)',
-                            overflow: 'hidden',
-                            position: 'relative',
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: `${clampPct(barPct)}%`,
-                              height: '100%',
-                              background: color,
-                              borderRadius: 999,
-                              boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)',
-                            }}
-                          />
-                          <div
-                            style={{
-                              position: 'absolute',
-                              inset: 0,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 900,
-                              fontSize: 12,
-                              color: barPct >= 35 ? yiqTextColor(color) : '#0f172a',
-                              textShadow: barPct >= 35 ? '0 1px 2px rgba(0,0,0,0.25)' : 'none',
-                              pointerEvents: 'none',
-                            }}
-                            aria-hidden="true"
-                          >
-                            {barPct.toFixed(0)}% du leader
-                          </div>
                         </div>
-                      </div>
                     </div>
                   );
                 });
               })()}
             </div>
           ) : (
-            <div style={{ opacity: 0.75 }}>
+            <div style={{ opacity: 0.95 }}>
               Aucun classement disponible : candidats inactifs pour ce tour, ou résultats non chargés.
             </div>
           )}

@@ -672,3 +672,132 @@
   cursor: not-allowed;
   filter: grayscale(0.25);
 }
+
+/* ================================================================
+   MASQUAGE GLOBAL - TOUS ÉCRANS (desktop + mobile)
+   Éléments retirés de l'interface complète
+   ================================================================ */
+
+/* Masquer le bloc de légende du scrutin (billes + texte explicatif) */
+.scrutin-legend {
+  display: none !important;
+}
+
+/* Masquer le badge "Avant ouverture" (scrutin-status warn) */
+.scrutin-status.warn {
+  display: none !important;
+}
+
+/* ================================================================
+   RESPONSIVE - VERSION MOBILE ALLÉGÉE
+   Ne modifie QUE la version mobile/tablette
+   ================================================================ */
+
+@media (max-width: 768px) {
+  /* Masquer les items de menu non essentiels en mobile */
+  .nav-item--passage-t2,
+  .nav-item--exports,
+  .nav-item--admin {
+    display: none !important;
+  }
+
+  /* Masquer le bloc de légende du scrutin (billes + texte explicatif) */
+  .scrutin-legend {
+    display: none !important;
+  }
+
+  /* Masquer le badge "Avant ouverture" (scrutin-status warn) */
+  .scrutin-status.warn {
+    display: none !important;
+  }
+
+  /* Masquer les blocs d'info dates et horaires, garder uniquement Base de données */
+  .nav-info .info-block:not(.info-block--auth) {
+    display: none !important;
+  }
+
+  /* Le bloc Base de données prend toute la largeur en mobile */
+  .info-block--auth {
+    width: 100%;
+    max-width: none;
+  }
+
+  /* Ajuster la grille d'info pour un seul bloc */
+  .top-info-row {
+    grid-template-columns: 1fr !important;
+    gap: 0 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Sur très petits écrans, encore plus compact */
+  .nav-item--passage-t2,
+  .nav-item--exports,
+  .nav-item--admin {
+    display: none !important;
+  }
+}
+
+/* ================================================================
+   INDICATEUR DE TOUR DANS NAVIGATION (SUR LA MÊME LIGNE)
+   ================================================================ */
+
+.tour-indicator-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.15rem; /* Même padding que nav-item */
+  border-radius: 20px; /* Bordures plus arrondies */
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.20);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  cursor: default;
+}
+
+/* Tour 1 - Vert foncé */
+.tour-indicator-badge--1 {
+  background: linear-gradient(135deg, #2E7D32 0%, #388E3C 100%);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.2); /* Bordure plus pâle */
+}
+
+/* Tour 2 - Bleu */
+.tour-indicator-badge--2 {
+  background: linear-gradient(135deg, #0055A4 0%, #1976D2 100%);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.2); /* Bordure plus pâle */
+}
+
+.tour-indicator-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.tour-indicator-text {
+  font-size: 0.95rem;
+  font-weight: 900;
+  text-transform: uppercase; /* MAJUSCULES */
+  letter-spacing: 1px;
+  line-height: 1;
+}
+
+/* Mobile - adapter si besoin */
+@media (max-width: 768px) {
+  .tour-indicator-badge {
+    font-size: 0.85rem;
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* ================================================================
+   RESPONSIVE - MASQUER LE BOUTON TOUR INACTIF
+   ================================================================ */
+
+@media (max-width: 768px) {
+  /* Masquer le bouton tour inactif en mobile */
+  .tour-pill.is-inactive {
+    display: none !important;
+  }
+}

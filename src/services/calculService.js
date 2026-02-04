@@ -210,8 +210,196 @@ export const calculService = {
   },
 
   /**
+   * Calcul de la répartition des sièges municipaux à partir d'un tableau "listes" déjà agrégé.
+   * Utile lorsque Google Sheets fournit un onglet de consolidation (ex: Seats_Municipal).
+   *
+   * Attendus par élément de `listes`:
+   *   - listeId (ou id)
+   *   - nomListe (ou nom)
+   *   - voix
+   *   - pctVoix (optionnel, recalculé si absent)
+   *   - eligible (optionnel)
+   *
+   * Règle (communes > 1000 hab.) :
+   *   - Prime majoritaire : la moitié des sièges, arrondie à l'entier supérieur, à la liste arrivée en tête
+   *   - Reste à la proportionnelle à la plus forte moyenne (D'Hondt), seuil 5%
+   *
+   * @param {Array<Object>} listes
+   * @param {number} totalSieges
+   * @returns {Array<Object>} lignes prêtes à afficher (prime/proportionnel/total)
+   */
+  calculerSiegesMunicipauxDepuisListes(listes = [], totalSieges = 29) {
+    const rows = Array.isArray(listes) ? listes : [];
+    const total = Number(totalSieges);
+    if (!Number.isFinite(total) || total <= 0) return [];
+
+    // Normalisation
+    const norm = rows
+      .map((r) => {
+        const id = (r?.listeId ?? r?.id ?? r?.ListeID ?? '').toString().trim();
+        const nom = (r?.nomListe ?? r?.nom ?? r?.NomListe ?? id).toString().trim();
+        const voix = toInt(r?.voix ?? r?.Voix ?? r?.VoixMunicipal ?? 0, 0);
+        const eligible = typeof r?.eligible === 'boolean' ? r.eligible : (String(r?.Eligible ?? '').toUpperCase() === 'TRUE');
+        const pctVoix = Number(r?.pctVoix ?? r?.pourcentage ?? r?.PctVoix);
+        return {
+          listeId: id,
+          nom,
+          voix,
+          eligible,
+          pctVoix: Number.isFinite(pctVoix) ? pctVoix : null,
+        };
+      })
+      .filter((r) => r.listeId && r.nom);
+
+    // Si aucune voix, on ne peut pas répartir.
+    const totalVoix = norm.reduce((s, r) => s + toInt(r.voix, 0), 0);
+    if (totalVoix <= 0) return [];
+
+    // Pourcentages (si non fournis)
+    for (const r of norm) {
+      if (r.pctVoix === null) {
+        r.pctVoix = (r.voix / totalVoix) * 100;
+      }
+    }
+
+    // Tri par voix décroissantes
+    norm.sort((a, b) => b.voix - a.voix);
+    const listeEnTete = norm[0];
+
+    // Prime majoritaire : moitié arrondie au supérieur
+    const prime = Math.ceil(total / 2);
+    const restants = total - prime;
+
+    // Seuil d'éligibilité : >= 5% (sauf si un flag eligible est fourni, il sert juste d'info)
+    const listesEligibles = norm.filter((r) => (Number(r.pctVoix) || 0) >= 5);
+
+    // Attribution proportionnelle (D'Hondt) sur les sièges restants
+    const propSeats = {};
+    for (const r of listesEligibles) propSeats[r.listeId] = 0;
+
+    for (let i = 0; i < restants; i++) {
+      let bestId = null;
+      let bestQ = -1;
+      for (const r of listesEligibles) {
+        const s = propSeats[r.listeId] || 0;
+        const q = r.voix / (s + 1);
+        if (q > bestQ) {
+          bestQ = q;
+          bestId = r.listeId;
+        }
+      }
+      if (!bestId) break;
+      propSeats[bestId] = (propSeats[bestId] || 0) + 1;
+    }
+
+    // Construire le résultat
+    return norm.map((r) => {
+      const prop = propSeats[r.listeId] || 0;
+      const primeSeats = r.listeId === listeEnTete.listeId ? prime : 0;
+      const totalSeats = primeSeats + prop;
+      return {
+        candidatId: r.listeId,
+        listeId: r.listeId,
+        nom: r.nom,
+        voix: r.voix,
+        pourcentage: r.pctVoix,
+        siegesPrime: primeSeats,
+        siegesProportionnels: prop,
+        sieges: totalSeats,
+        methode: r.listeId === listeEnTete.listeId
+          ? `Prime (${primeSeats}) + Proportionnelle (${prop})`
+          : 'Proportionnelle',
+        eligible: (Number(r.pctVoix) || 0) >= 5,
+      };
+    });
+  },
+
+  /**
    * Formatage sûr d'un pourcentage
    */
+  /**
+   * Répartition des sièges au conseil communautaire (commune > 1000 hab.) :
+   * - Même logique que les sièges municipaux (listes) : prime majoritaire (50% arrondi au supérieur)
+   * - Reste : proportionnelle à la plus forte moyenne (D'Hondt) sur les listes >= 5%
+   *
+   * Entrée attendue : listes issues de Seats_Community (ou équivalent), ex :
+   * [{ listeId:'L1', nomListe:'Liste 1', voixMunicipal:6200, pctMunicipal:52.67, eligible:true }, ...]
+   */
+  calculerSiegesCommunautairesDepuisListes(listes = [], totalSieges = 0) {
+    const total = Number(totalSieges);
+    if (!Array.isArray(listes) || listes.length === 0 || !Number.isFinite(total) || total <= 0) return [];
+
+    // Normaliser
+    const norm = listes
+      .map((l) => {
+        const listeId = (l.listeId ?? l.ListeID ?? l.candidatId ?? '').toString().trim();
+        const nom = (l.nomListe ?? l.NomListe ?? l.nom ?? l.liste ?? listeId ?? '').toString().trim();
+        const voix = Number(l.voixMunicipal ?? l.VoixMunicipal ?? l.voix ?? l.Voix ?? 0) || 0;
+        const pct = Number(l.pctMunicipal ?? l.PctMunicipal ?? l.pourcentage ?? l.PctVoix ?? 0) || 0;
+        const eligible = typeof l.eligible === 'boolean' ? l.eligible : (pct >= 5);
+        return { listeId, nom, voix, pctVoix: pct, eligible };
+      })
+      .filter((r) => r.listeId);
+
+    if (norm.length === 0) return [];
+
+    const totalVoix = norm.reduce((s, r) => s + (Number(r.voix) || 0), 0);
+    const withPct = norm.map((r) => ({
+      ...r,
+      pctVoix: r.pctVoix || (totalVoix > 0 ? (r.voix * 100) / totalVoix : 0)
+    }));
+
+    // Sélection des listes éligibles (seuil 5%)
+    const eligibles = withPct.filter((r) => (Number(r.pctVoix) || 0) >= 5);
+    if (eligibles.length === 0) return [];
+
+    // Liste en tête (voix max)
+    const listeEnTete = eligibles.reduce((best, r) => (r.voix > best.voix ? r : best), eligibles[0]);
+
+    // Prime majoritaire = 50% des sièges arrondis au supérieur
+    const prime = Math.ceil(total / 2);
+    const reste = total - prime;
+
+    // Attribution proportionnelle (D'Hondt) sur le reste
+    const propSeats = {};
+    for (let i = 0; i < reste; i++) {
+      let bestId = null;
+      let bestQ = -1;
+      for (const r of eligibles) {
+        const s = propSeats[r.listeId] || 0;
+        const q = r.voix / (s + 1);
+        if (q > bestQ) {
+          bestQ = q;
+          bestId = r.listeId;
+        }
+      }
+      if (!bestId) break;
+      propSeats[bestId] = (propSeats[bestId] || 0) + 1;
+    }
+
+    return eligibles
+      .map((r) => {
+        const prop = propSeats[r.listeId] || 0;
+        const primeSeats = r.listeId === listeEnTete.listeId ? prime : 0;
+        const totalSeats = primeSeats + prop;
+        return {
+          candidatId: r.listeId,
+          listeId: r.listeId,
+          nom: r.nom,
+          voix: r.voix,
+          pourcentage: r.pctVoix,
+          siegesPrime: primeSeats,
+          siegesProportionnels: prop,
+          sieges: totalSeats,
+          methode: r.listeId === listeEnTete.listeId
+            ? `Prime (${primeSeats}) + Proportionnelle (${prop})`
+            : 'Proportionnelle',
+          eligible: (Number(r.pctVoix) || 0) >= 5,
+        };
+      })
+      // Tri : sièges desc, puis voix desc
+      .sort((a, b) => (b.sieges - a.sieges) || (b.voix - a.voix));
+  },
   formatPercent(value, decimals = 2) {
     const n = Number(value);
     if (!Number.isFinite(n)) return `0.${'0'.repeat(decimals)}%`;

@@ -146,10 +146,7 @@ const ParticipationTableau = ({ electionState}) => {
       </div>
 
       <div className="legend">
-        <p><span className="legend-item has-data" aria-hidden="true"></span> Bureau avec données saisies</p>
-        <p><span className="legend-item no-data" aria-hidden="true"></span> Bureau en attente de saisie</p>
         <p><span className="legend-item cell-empty" aria-hidden="true"></span> Cellule heure non renseignée (fond rouge)</p>
-        <p><span className="legend-item cell-filled" aria-hidden="true"></span> Cellule heure renseignée (fond vert)</p>
       </div>
     </div>
   );

@@ -808,20 +808,7 @@ Cette action n'exécute pas le passage au tour 2 : elle autorise ou bloque la co
     <div className={`app ${electionState?.tourActuel === 2 ? "theme-tour-2" : "theme-tour-1"}`}>
       <Navigation key={`${electionState?.tourActuel ?? 1}-${electionState?.secondTourEnabled ? 1 : 0}`} currentPage={currentPage} onNavigate={setCurrentPage} isAuthenticated={isAuthenticated} onSignIn={handleSignIn} onSignOut={handleSignOut} electionState={electionState} />
 
-      <div className="tour-banner">
-        {electionState?.tourActuel === 2 ? (
-          <>
-            <span className="tour-badge">🔵</span>
-            <span>TOUR 2 – BLEU</span>
-          </>
-        ) : (
-          <>
-            <span className="tour-badge">🟢</span>
-            <span>TOUR 1 – VERT FONCÉ</span>
-          </>
-        )}
-      </div>
-<main className="main-content">{renderPage()}</main>
+      <main className="main-content">{renderPage()}</main>
 
       <Footer />
       {/* UI Toasts */}

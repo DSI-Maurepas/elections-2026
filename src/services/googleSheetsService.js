@@ -303,6 +303,43 @@ async sleep(ms) {
             timestamp: row[13] || ''
           };
         });
+
+      case 'Seats_Municipal':
+        // Colonnes attendues :
+        // Tour | ListeID | NomListe | Voix | PctVoix | SiegesMajorite | SiegesProportionnels | SiegesTotal | Eligible
+        return rows.map(row => ({
+          tour: _int(row, 'Tour', 0, 1) || 1,
+          listeId: _str(row, 'ListeID', 1, ''),
+          nomListe: _str(row, 'NomListe', 2, ''),
+          voix: _int(row, 'Voix', 3, 0),
+          pctVoix: (() => {
+            const i = _idx('PctVoix', 4);
+            const v = (i !== undefined && i !== null) ? row[i] : undefined;
+            const n = parseFloat(String(v ?? '').replace(',', '.'));
+            return Number.isFinite(n) ? n : 0;
+          })(),
+          siegesMajorite: _int(row, 'SiegesMajorite', 5, 0),
+          siegesProportionnels: _int(row, 'SiegesProportionnels', 6, 0),
+          siegesTotal: _int(row, 'SiegesTotal', 7, 0),
+          eligible: String(_str(row, 'Eligible', 8, 'FALSE')).trim().toUpperCase() === 'TRUE'
+        }));
+
+      case 'Seats_Community':
+        // Colonnes attendues :
+        // ListeID | NomListe | VoixMunicipal | PctMunicipal | SiegesCommunautaires | Eligible
+        return rows.map(row => ({
+          listeId: _str(row, 'ListeID', 0, ''),
+          nomListe: _str(row, 'NomListe', 1, ''),
+          voixMunicipal: _int(row, 'VoixMunicipal', 2, 0),
+          pctMunicipal: (() => {
+            const i = _idx('PctMunicipal', 3);
+            const v = (i !== undefined && i !== null) ? row[i] : undefined;
+            const n = parseFloat(String(v ?? '').replace(',', '.'));
+            return Number.isFinite(n) ? n : 0;
+          })(),
+          siegesCommunautaires: _int(row, 'SiegesCommunautaires', 4, 0),
+          eligible: String(_str(row, 'Eligible', 5, 'FALSE')).trim().toUpperCase() === 'TRUE'
+        }));
 default:
         // Par défaut, retourner les lignes brutes
         return rows;

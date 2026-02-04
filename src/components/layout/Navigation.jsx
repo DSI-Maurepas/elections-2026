@@ -153,13 +153,21 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
       </div>
 
       <ul className="nav-menu" style={mobileBtnWidth ? { "--nav-btn-w": `${mobileBtnWidth}px` } : undefined}>
+        {/* Indicateur de tour EN PREMIER dans la liste */}
+        <li key="tour-indicator">
+          <div className={`tour-indicator-badge tour-indicator-badge--${tourActuel}`}>
+            <span className="tour-indicator-icon">{tourActuel === 2 ? '🔵' : '🟢'}</span>
+            <span className="tour-indicator-text">TOUR {tourActuel}</span>
+          </div>
+        </li>
+        
         {menuItems
           .filter((item) => item.always || item.show)
           .map((item, idx) => (
             <li key={item.id}>
               <button
                 ref={(el) => { btnRefs.current[idx] = el; }}
-                className={`nav-item ${currentPage === item.page ? 'active' : ''} ${item.disabled ? 'is-disabled' : ''}`}
+                className={`nav-item nav-item--${item.id} ${currentPage === item.page ? 'active' : ''} ${item.disabled ? 'is-disabled' : ''}`}
                   onClick={() => { if (!item.disabled) onNavigate(item.page); }}
                   type="button"
                   disabled={!!item.disabled}
