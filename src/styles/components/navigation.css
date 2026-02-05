@@ -2,7 +2,7 @@
 .main-navigation {
   background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
   color: white;
-  padding: 1.5rem;
+  padding: 1rem;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
@@ -10,8 +10,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
   border-bottom: 1px solid rgba(255,255,255,0.2);
 }
 
@@ -80,7 +80,7 @@
   background: rgba(255,255,255,0.14);
   border: 2px solid rgba(255,255,255,0.28); /* liseré pour séparer des blocs */
   color: rgba(255,255,255,0.96);
-  padding: 0.85rem 1.15rem;
+  padding: 0.85rem 0.75rem; /*Taille des boutons en largeur*/
   border-radius: 16px;
   cursor: pointer;
   transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease, border-color 180ms ease, color 180ms ease;
@@ -96,7 +96,7 @@
   background: rgba(255,255,255,0.98);       /* fond blanc */
   color: #1e3c72;                           /* police bleue */
   border-color: rgba(255,255,255,0.95);
-  box-shadow: 0 18px 40px rgba(0,0,0,0.28);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.48);
   transform: translateY(-1px);
 }.nav-info {
   margin-top: 1rem;
@@ -618,12 +618,12 @@
 /* === NAV FIX START === */
 /* ---- Titre (non-régression) ---- */
 .main-navigation .nav-header .app-title-year{
-  font-size: 72px;              /* 2026 plus grand */
-  line-height: 0.92;
-  font-weight: 900;
+  font-size: 84px;              /* 2026 plus grand */
+  line-height: 1.0;
+  font-weight: 1000;
   color: #fff;
-  letter-spacing: 0.28em;
-  text-indent: 0.28em;
+  letter-spacing: 0.00em;
+  text-indent: 0.00em;
 }
 
 /* ---- Menu: desktop en ligne, mobile en colonne ---- */
