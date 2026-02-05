@@ -152,9 +152,20 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
         </div>
       </div>
 
+      {/* Badge TOUR X flottant (RESPONSIVE UNIQUEMENT)
+          - Visible en haut à droite
+          - Ne perturbe pas la grille 2x2 des 4 boutons
+      */}
+      <div className="tour-indicator-floating" aria-hidden="true">
+        <div className={`tour-indicator-badge tour-indicator-badge--${tourActuel || 1}`}>
+          <span className="tour-indicator-icon">{tourActuel === 2 ? '🔵' : '🟢'}</span>
+          <span className="tour-indicator-text">TOUR {tourActuel || 1}</span>
+        </div>
+      </div>
+
       <ul className="nav-menu" style={mobileBtnWidth ? { "--nav-btn-w": `${mobileBtnWidth}px` } : undefined}>
         {/* Indicateur de tour EN PREMIER dans la liste */}
-        <li key="tour-indicator">
+        <li key="tour-indicator" data-menu-id="tour-indicator">
           <div className={`tour-indicator-badge tour-indicator-badge--${tourActuel}`}>
             <span className="tour-indicator-icon">{tourActuel === 2 ? '🔵' : '🟢'}</span>
             <span className="tour-indicator-text">TOUR {tourActuel}</span>
@@ -164,8 +175,9 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
         {menuItems
           .filter((item) => item.always || item.show)
           .map((item, idx) => (
-            <li key={item.id}>
+            <li key={item.id} data-menu-id={item.id}>
               <button
+                data-menu-id={item.id}
                 ref={(el) => { btnRefs.current[idx] = el; }}
                 className={`nav-item nav-item--${item.id} ${currentPage === item.page ? 'active' : ''} ${item.disabled ? 'is-disabled' : ''}`}
                   onClick={() => { if (!item.disabled) onNavigate(item.page); }}

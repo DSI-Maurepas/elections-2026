@@ -400,7 +400,13 @@ export const calculService = {
       // Tri : sièges desc, puis voix desc
       .sort((a, b) => (b.sieges - a.sieges) || (b.voix - a.voix));
   },
-  formatPercent(value, decimals = 2) {
+  
+  // Alias rétrocompatible : certains composants/appels historiques utilisent ce nom.
+  // Délègue à la version "DepuisListes" (prime majoritaire + plus forte moyenne).
+  calculerSiegesCommunautaires(listes, totalSieges = 6) {
+    return this.calculerSiegesCommunautairesDepuisListes(listes, totalSieges);
+  },
+formatPercent(value, decimals = 2) {
     const n = Number(value);
     if (!Number.isFinite(n)) return `0.${'0'.repeat(decimals)}%`;
     return `${n.toFixed(decimals)}%`;

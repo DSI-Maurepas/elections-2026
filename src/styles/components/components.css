@@ -1595,3 +1595,38 @@
     font-size: 0.8rem;
   }
 }
+
+/* =========================
+   FOOTER - RESPONSIVE ONLY
+   (affiche uniquement Conformité + Support en 2 colonnes)
+   ========================= */
+@media (max-width: 768px) {
+  .footer-content{
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  .footer-section:nth-child(3),
+  .footer-section:nth-child(4){
+    display: none;
+  }
+}
+
+/* ========================================================= */
+/* ALIGNEMENT TYPOGRAPHIQUE – PAGE PARTICIPATION             */
+/* Objectif : rendu STRICTEMENT identique à la page Résultats */
+/* ========================================================= */
+
+.participation-saisie h2,
+.participation-tableau h2,
+.participation-stats h2 {
+  font-family: inherit;
+  font-weight: 600;        /* identique Résultats */
+  letter-spacing: normal;
+}
+
+.participation-saisie,
+.participation-tableau,
+.participation-stats {
+  font-family: inherit;
+  font-weight: normal;
+}

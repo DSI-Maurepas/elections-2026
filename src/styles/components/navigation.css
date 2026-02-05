@@ -783,6 +783,11 @@
   line-height: 1;
 }
 
+/* Badge TOUR X flottant : caché par défaut (desktop), affiché uniquement en responsive */
+.main-navigation .tour-indicator-floating{
+  display: none;
+}
+
 /* Mobile - adapter si besoin */
 @media (max-width: 768px) {
   .tour-indicator-badge {
@@ -791,13 +796,58 @@
   }
 }
 
-/* ================================================================
-   RESPONSIVE - MASQUER LE BOUTON TOUR INACTIF
-   ================================================================ */
 
-@media (max-width: 768px) {
-  /* Masquer le bouton tour inactif en mobile */
-  .tour-pill.is-inactive {
+/* === Responsive overrides (mobile only) : grille 2x2 + badge TOUR X + footer non-impact === */
+@media (max-width: 900px){
+  /* Masquer les pastilles "1er Tour / 2nd Tour" du header (responsive uniquement) */
+  .main-navigation .election-status .tour-pill{
+    display: none !important;
+  }
+
+  /* Badge TOUR X : visible en haut à droite de l'écran (responsive uniquement)
+     IMPORTANT: ne pas masquer le badge lui-même (sinon invisible)
+     -> on masque l'item dans la grille, et on utilise le badge flottant hors-grille.
+  */
+  .main-navigation .nav-menu li[data-menu-id="tour-indicator"]{
+    display: none !important; /* on le retire de la grille 2x2 */
+  }
+
+  .main-navigation .tour-indicator-floating{
+    display: block !important;
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 9999;
+    margin: 0 !important;
+  }
+
+  /* Menu principal en grille 2x2 (4 boutons) */
+  .main-navigation .nav-menu{
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: stretch;
+    justify-items: stretch;
+  }
+  .main-navigation .nav-menu li{
+    width: 100% !important;
+  }
+  .main-navigation .nav-menu .nav-item{
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  /* Ne garder que les 4 boutons demandés en responsive */
+  .main-navigation .nav-menu li[data-menu-id="passage-t2"],
+  .main-navigation .nav-menu li[data-menu-id="exports"],
+  .main-navigation .nav-menu li[data-menu-id="admin"]{
+    display: none !important;
+  }
+}
+
+/* Desktop : ne jamais afficher le badge flottant (mode écran inchangé) */
+@media (min-width: 901px){
+  .main-navigation .tour-indicator-floating{
     display: none !important;
   }
 }

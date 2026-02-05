@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import useGoogleSheets from '../../hooks/useGoogleSheets';
-import useElectionState from '../../hooks/useElectionState';
 
 const COLORS = ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#ef4444', '#14b8a6', '#f59e0b'];
 
@@ -21,10 +20,15 @@ const getCandidateId = (c, idx) => {
   return `L${idx + 1}`;
 };
 
-const ResultatsClassement = ({ electionState}) => {
-  const tour = electionState?.activeTour || 1;
+const ResultatsClassement = ({ electionState }) => {
+  // IMPORTANT : useGoogleSheets attend un nom d'onglet (string), pas un numéro de tour.
+  // Une régression passée provoquait : Unable to parse range: '1'!A:Z
+  const tour = Number(electionState?.activeTour ?? electionState?.tourActuel ?? 1);
+  const sheetResultats = tour === 1 ? 'Resultats_T1' : 'Resultats_T2';
 
-  const { resultats: resultatsRaw, candidats: candidatsRaw } = useGoogleSheets(tour);
+  const { data: resultatsRaw } = useGoogleSheets(sheetResultats);
+  const { data: candidatsRaw } = useGoogleSheets('Candidats');
+
   const resultats = Array.isArray(resultatsRaw) ? resultatsRaw : [];
   const candidats = Array.isArray(candidatsRaw) ? candidatsRaw : [];
 
@@ -89,6 +93,11 @@ const ResultatsClassement = ({ electionState}) => {
               <div className="top3-stats">
                 <div className="top3-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</div>
                 <div className="top3-pct">{candidat.pct.toFixed(2)}%</div>
+                <div className="top3-bar">
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{ width: `${Math.min(100, candidat.pct)}%`, background: color }} />
+                  </div>
+                </div>
               </div>
             </div>
           );

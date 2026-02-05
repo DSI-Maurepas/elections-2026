@@ -9,6 +9,22 @@ const Footer = () => {
 
   return (
     <footer className="main-footer">
+      <style>{`
+        /* Responsive uniquement : 2 blocs sur une seule ligne */
+        @media (max-width: 900px){
+          .main-footer .footer-content{
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+            gap: 16px !important;
+            align-items: start !important;
+          }
+          .main-footer .footer-content .footer-section{ min-width: 0 !important; }
+          .main-footer .footer-content .footer-section:nth-child(3),
+          .main-footer .footer-content .footer-section:nth-child(4){
+            display: none !important;
+          }
+        }
+      `}</style>
       <div className="footer-content">
         <div className="footer-section">
           <h4>⚖️ Conformité légale</h4>
