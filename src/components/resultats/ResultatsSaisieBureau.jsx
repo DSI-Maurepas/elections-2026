@@ -523,7 +523,7 @@ const bureauData = bureaux.find(b => b.id === selectedBureau);
         }
       `}</style>
 
-      <h2 className="rs-title">Saisie des resultats - Tour {electionState.tourActuel}</h2>
+      <h3 className="rs-title">🗳️ Saisie des resultats - Tour {electionState.tourActuel}</h3>
 
       <form onSubmit={handleSubmit}>
         <div className="form-group">

@@ -1610,3 +1610,268 @@
     display: none;
   }
 }
+
+/* ========================================================= */
+/* RESULTATS – CLASSEMENT : design moderne (barres + layout)  */
+/* Scope strict : uniquement .resultats-section               */
+/* ========================================================= */
+
+.resultats-section .top3-grid{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin: 0 0 14px 0;
+}
+
+.resultats-section .top3-card{
+  background:#fff;
+  border-radius:16px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.10);
+  border: 1px solid rgba(0,0,0,0.06);
+  padding: 14px 16px;
+  border-left: 6px solid #1e3c72; /* sera remplacé via inline style */
+}
+
+.resultats-section .top3-card.eliminated{
+  background: #f6f7fb;          /* plus sombre */
+  border-color: rgba(0,0,0,0.08);
+}
+
+.resultats-section .top3-rank{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:30px;
+  height:30px;
+  border-radius:999px;
+  background: rgba(30,60,114,0.10);
+  font-weight:800;
+  margin-bottom: 6px;
+}
+
+.resultats-section .top3-content{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 10px;
+}
+
+.resultats-section .top3-name{
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0b4ea2;
+  line-height: 1.2;
+}
+
+.resultats-section .top3-badge{ margin-top: 2px; }
+
+.resultats-section .badge{
+  display:inline-flex;
+  align-items:center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius:999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.resultats-section .badge.qualified{
+  background: rgba(22,163,74,0.12);
+  color: #0f7a33;
+  border: 1px solid rgba(22,163,74,0.25);
+}
+
+.resultats-section .badge.eliminated{
+  background: rgba(239,68,68,0.12);
+  color: #b42318;
+  border: 1px solid rgba(239,68,68,0.25);
+}
+
+.resultats-section .top3-stats{
+  margin-top: 10px;
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.resultats-section .top3-meta{
+  display:flex;
+  align-items:baseline;
+  gap: 14px;
+  font-weight: 700;
+}
+
+.resultats-section .top3-voix{
+  font-size: 1rem;
+  color:#0f172a;
+}
+
+.resultats-section .top3-pct{
+  font-size: 0.95rem;
+  color:#334155;
+  font-weight: 700;
+}
+
+/* Barres : moins hautes, arrondies, alignées à gauche */
+.resultats-section .bar-track{
+  width:100%;
+  height: 12px;
+  background:#eef1f5;
+  border-radius:999px;
+  overflow:hidden;
+  border: 1px solid rgba(0,0,0,0.06);
+
+  display:flex;
+  justify-content:flex-start;
+  align-items:stretch;
+}
+
+.resultats-section .bar-fill{
+  height:100%;
+  display:block;     /* IMPORTANT : évite le centrage */
+  padding:0;         /* IMPORTANT : pas de padding dans la barre */
+  border-radius:999px; /* left aligned */
+
+  margin:0;
+  flex:0 0 auto;
+  transform:none;
+  border-radius:999px;
+}
+
+/* Autres candidats : bloc moderne */
+.resultats-section .classement-list{
+  background:#fff;
+  border-radius:16px;
+  padding: 12px 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.resultats-section .classement-subtitle{
+  font-size: 1rem;
+  font-weight: 900;
+  color: #0b4ea2;
+  margin: 2px 2px 10px 2px;
+}
+
+.resultats-section .classement-item{
+  border-radius: 14px;
+  padding: 10px 10px;
+  background: rgba(30,60,114,0.03);
+  margin-bottom: 8px;
+}
+
+.resultats-section .classement-item:last-child{ margin-bottom: 0; }
+
+@media (max-width: 768px){
+  .resultats-section .top3-card{ padding: 12px 12px; }
+  .resultats-section .top3-name{ font-size: 1.05rem; }
+  .resultats-section .bar-track{ height: 10px; }
+}
+
+
+/* ========================================================= */
+/* RESULTATS CLASSEMENT – STYLE UNIFIÉ TOUS CANDIDATS         */
+/* ========================================================= */
+
+.resultats-section .candidate-card {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.resultats-section .candidate-card.secondary {
+  background: #f1f5f9;
+}
+
+.resultats-section .candidate-card.eliminated {
+  background: #e5e7eb;
+}
+
+.resultats-section .candidate-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+
+.resultats-section .candidate-stats {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  white-space: nowrap;
+  font-size: 0.95rem;
+}
+
+.resultats-section .progress-track {
+  width: 100%;
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.resultats-section .progress-bar {
+  height: 100%;
+  border-radius: 999px;
+}
+
+
+/* Autres candidats : toutes les infos sur UNE ligne */
+.resultats-section .other-card{
+  padding: 12px 14px;
+}
+
+.resultats-section .other-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 14px;
+}
+
+.resultats-section .other-left{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.resultats-section .other-left .top3-rank{
+  margin-bottom: 0;
+  flex: 0 0 auto;
+}
+
+.resultats-section .other-name{
+  font-weight: 800;
+  color: #0f3b82;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.resultats-section .other-meta{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  white-space:nowrap;
+  flex: 0 0 auto;
+}
+
+.resultats-section .other-voix{
+  font-weight: 700;
+  color: #111827;
+}
+
+.resultats-section .other-pct{
+  font-weight: 600;
+  color: #334155;
+}
+
+
+/* Resultats classement: force bar container full width */
+.resultats-section .top3-bar{ width:100%; }

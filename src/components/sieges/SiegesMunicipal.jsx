@@ -62,7 +62,7 @@ const SiegesMunicipal = ({ electionState}) => {
 
   return (
     <div className="sieges-municipal">
-      <h2>🪑 Répartition des sièges - Conseil Municipal</h2>
+      <h3>🪑 Répartition des sièges - Conseil Municipal</h3>
       
       
       <style>{`

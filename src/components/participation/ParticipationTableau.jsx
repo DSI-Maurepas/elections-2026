@@ -85,7 +85,7 @@ const ParticipationTableau = ({ electionState}) => {
 
   return (
     <div className="participation-tableau">
-      <h2>📊 Consolidation de la participation - Tour {electionState.tourActuel}</h2>
+      <h2>📊 Consolidation de la participation <br /> Tour {electionState.tourActuel}</h2>
 
       <div className="tableau-scroll">
         <table className="participation-table participation-table--compact">

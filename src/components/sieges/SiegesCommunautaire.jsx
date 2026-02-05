@@ -72,7 +72,7 @@ const SiegesCommunautaire = ({ electionState }) => {
 
   return (
     <div className="sieges-communautaire">
-      <h2>🪑 Répartition des sièges - Conseil Communautaire (SQY)</h2>
+      <h3>🪑 Répartition des sièges - Conseil Communautaire (SQY)</h3>
 
       <style>{`
 /* Sticky + scroll uniquement pour les tableaux Sièges */

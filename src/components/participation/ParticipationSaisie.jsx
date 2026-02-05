@@ -177,7 +177,7 @@ const ParticipationSaisie = ({ electionState, reloadElectionState }) => {
 
   return (
     <div className="participation-saisie">
-      <h2>📋 Saisie de la participation - Tour {electionState.tourActuel}</h2>
+      <h2>📋 Saisie de la participation <br /> Tour {electionState.tourActuel}</h2>
 
       <form onSubmit={handleSubmit}>
         <div className="form-group">

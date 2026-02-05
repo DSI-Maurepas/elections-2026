@@ -80,7 +80,7 @@ const ResultatsClassement = ({ electionState }) => {
               style={{ borderLeftColor: color }}
             >
               <div className="top3-rank" style={{ color }}>{rank}</div>
-              <div className="top3-content">
+              <div className="candidate-card">
                 <div className="top3-name">{candidat.name}</div>
                 <div className="top3-badge">
                   {isQualifie ? (
@@ -91,8 +91,10 @@ const ResultatsClassement = ({ electionState }) => {
                 </div>
               </div>
               <div className="top3-stats">
-                <div className="top3-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</div>
-                <div className="top3-pct">{candidat.pct.toFixed(2)}%</div>
+                <div className="top3-meta">
+                  <span className="top3-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</span>
+                  <span className="top3-pct">{candidat.pct.toFixed(2)}%</span>
+                </div>
                 <div className="top3-bar">
                   <div className="bar-track">
                     <div className="bar-fill" style={{ width: `${Math.min(100, candidat.pct)}%`, background: color }} />
@@ -108,15 +110,41 @@ const ResultatsClassement = ({ electionState }) => {
       {others.length > 0 && (
         <div className="classement-list">
           <div className="classement-subtitle">Autres candidats</div>
+
           {others.map((candidat, idx) => {
             const rank = idx + 4;
             const color = COLORS[(rank - 1) % COLORS.length];
+            const isQualifie = rank <= 2;
+
             return (
-              <div key={`${candidat.id}-${rank}`} className="classement-item" style={{ borderLeftColor: color }}>
-                <div className="classement-rank" style={{ color }}>{rank}</div>
-                <div className="classement-name">{candidat.name}</div>
-                <div className="classement-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</div>
-                <div className="classement-pct">{candidat.pct.toFixed(2)}%</div>
+              <div
+                key={`${candidat.id}-${rank}`}
+                className={`top3-card other-card ${isQualifie ? 'qualified' : 'eliminated'}`}
+                style={{ borderLeftColor: color }}
+              >
+                <div className="other-row">
+                  <div className="other-left">
+                    <div className="top3-rank" style={{ color }}>{rank}</div>
+                    <div className="other-name">{candidat.name}</div>
+                  </div>
+
+                  <div className="other-meta">
+                    <span className="other-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</span>
+                    <span className="other-pct">{candidat.pct.toFixed(2)}%</span>
+
+                    {isQualifie ? (
+                      <span className="badge qualified">✅ QUALIFIÉ</span>
+                    ) : (
+                      <span className="badge eliminated">⛔ ÉLIMINÉ</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="top3-bar">
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{ width: `${Math.min(100, candidat.pct)}%`, background: color }} />
+                  </div>
+                </div>
               </div>
             );
           })}

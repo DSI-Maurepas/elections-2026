@@ -193,9 +193,9 @@ const ResultatsValidation = ({ electionState}) => {
         }
       `}</style>
 
-      <h2 className="validation-title">
-        ✅ Validation des résultats — <span>Tour {electionState.tourActuel}</span>
-      </h2>
+      <h3 className="validation-title">
+        ✅ Validation des résultats - Tour {electionState.tourActuel}
+      </h3>
 
       {/* Bandeau global */}
       <div className={`validation-banner ${bannerStateClass}`}>

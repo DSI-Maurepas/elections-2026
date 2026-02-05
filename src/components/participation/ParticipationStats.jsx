@@ -242,7 +242,7 @@ const ParticipationStats = ({ electionState}) => {
 
   return (
     <div className="participation-stats">
-      <h2>📈 Statistiques de participation - Tour {electionState.tourActuel}</h2>
+      <h2>📈 Statistiques de participation <br /> Tour {electionState.tourActuel}</h2>
 
       {/* Chiffres clés (KPI) */}
       <div className="stats-grid">

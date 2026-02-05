@@ -264,7 +264,7 @@ const ResultatsConsolidation = ({ electionState}) => {
         }
       `}</style>
 
-      <h2> Consolidation communale - Tour {electionState.tourActuel}</h2>
+      <h3>🏛️ Consolidation communale - Tour {electionState.tourActuel}</h3>
 
       {/* 6 cartes totaux */}
       <div className="totaux-grid totaux-grid-6">
@@ -301,7 +301,7 @@ const ResultatsConsolidation = ({ electionState}) => {
 
       {/* Statistiques */}
       <div className="resultats-stats">
-        <h3>📌 Statistiques :</h3>
+        <h4>📌 Statistiques :</h4>
 
         <div className="stats-cards">
           <div className="stats-card stats-card--declares">
@@ -354,7 +354,7 @@ const ResultatsConsolidation = ({ electionState}) => {
 
       {/* Résultats par candidat */}
       <div className="resultats-candidats">
-        <h3>🧑‍💼 Résultats par candidat&nbsp;:</h3>
+        <h4>🧑‍💼 Résultats par candidat&nbsp;:</h4>
 
         <table className="candidats-table candidats-table--responsive">
           <thead>
@@ -484,8 +484,7 @@ const ResultatsConsolidation = ({ electionState}) => {
 <div>
                 <div style={{ fontWeight: 900, fontSize: '1.1rem', lineHeight: 1.1, color: '#0f172a' }}>
                   Classement officiel
-                </div>
-                <div style={{ marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                <div style={{ marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span
                     style={{
                       display: 'inline-flex',
@@ -502,7 +501,7 @@ const ResultatsConsolidation = ({ electionState}) => {
                   >
                      Tour {electionState.tourActuel}
                   </span>
-
+                </div>
                   {electionState.tourActuel === 1 && (
                     <span
                       style={{
