@@ -15,7 +15,7 @@ const Footer = () => {
           .main-footer .footer-content{
             display: grid !important;
             grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
-            gap: 16px !important;
+            gap: 10px !important;
             align-items: start !important;
           }
           .main-footer .footer-content .footer-section{ min-width: 0 !important; }
@@ -57,7 +57,7 @@ const Footer = () => {
         <div className="footer-section">
           <h4>ℹ️ Informations</h4>
           <p>
-            Version 3.6.4<br />
+            Version 4.6.7<br />
             13 bureaux de vote configurés<br />
             Premier tour : 15 mars 2026<br />
             Second tour : 22 mars 2026
