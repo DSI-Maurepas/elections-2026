@@ -7,6 +7,7 @@ import { ELECTION_CONFIG, SHEET_NAMES } from '../utils/constants';
 import auditService from './auditService';
 import * as XLSX from 'xlsx';
 import googleSheetsService from './googleSheetsService';
+import calculService from './calculService';
 
 class ExportService {
   /**
@@ -28,18 +29,24 @@ class ExportService {
           await this.exportResultatsCSV(resultats, candidats, tour);
           break;
         
-        case 'sieges':
-        case 'sieges_municipal':
-          alert('Export sièges : Veuillez calculer les sièges avant d\'exporter.');
-          console.warn('Export sièges municipal: calcul requis avant export');
+        case 'sieges': {
+          const { municipal, communautaire } = await this.getSiegesCalcules(tour);
+          await this.exportSiegesXLSX(municipal, communautaire, tour);
           break;
-        
-        case 'sieges_communautaire':
-          alert('Export sièges communautaires : Veuillez calculer les sièges avant d\'exporter.');
-          console.warn('Export sièges communautaire: calcul requis avant export');
+        }
+
+        case 'sieges_municipal': {
+          const { municipal } = await this.getSiegesCalcules(tour);
+          await this.exportSiegesXLSX(municipal, [], tour, { only: 'municipal' });
           break;
-        
-        case 'audit':
+        }
+
+        case 'sieges_communautaire': {
+          const { communautaire } = await this.getSiegesCalcules(tour);
+          await this.exportSiegesXLSX([], communautaire, tour, { only: 'communautaire' });
+          break;
+        }
+case 'audit':
           const auditData = await googleSheetsService.getData(SHEET_NAMES.AUDIT_LOG);
           await this.exportAuditCSV(auditData);
           break;
@@ -74,8 +81,8 @@ class ExportService {
         const bureaux = await googleSheetsService.getData(SHEET_NAMES.BUREAUX);
         await this.openParticipationForPrint(participation, bureaux, tour);
       } else if (type === 'sieges') {
-        alert('Export PDF Sièges : Veuillez calculer les sièges avant d\'exporter en PDF.\n\nPour l\'instant, utilisez l\'export Excel (CSV).');
-        console.warn('Export PDF sièges: non implémenté - utilisez CSV');
+        const { municipal, communautaire } = await this.getSiegesCalcules(tour);
+        await this.openSiegesForPrint(municipal, communautaire, tour);
       } else if (type === 'statistiques') {
         const sheetNameResultats = tour === 1 ? SHEET_NAMES.RESULTATS_T1 : SHEET_NAMES.RESULTATS_T2;
         const resultats = await googleSheetsService.getData(sheetNameResultats);
@@ -1390,7 +1397,282 @@ const data = (auditData || [])
   }
 
 
+  
   /**
+   * Calcule (ou recalcule) la répartition des sièges à partir des tableaux Google Sheets
+   * - Municipal : Seats_Municipal (filtré par tour)
+   * - Communautaire : Seats_Community
+   * Important : on ne dépend PAS d'un état "bouton calculer" côté UI.
+   * Si les voix consolidées sont présentes dans Sheets, l'export doit fonctionner.
+   */
+  async getSiegesCalcules(tour = 1) {
+    const t = Number(tour) || 1;
+
+    // 1) Source principale : tables dédiées dans Sheets
+    const [seatsMunicipalRaw, seatsCommunityRaw] = await Promise.all([
+      googleSheetsService.getData(SHEET_NAMES.SEATS_MUNICIPAL),
+      googleSheetsService.getData(SHEET_NAMES.SEATS_COMMUNITY)
+    ]);
+
+    // Normalisation Seats_Municipal (par tour)
+    const seatsMunicipalRows = (Array.isArray(seatsMunicipalRaw) ? seatsMunicipalRaw : [])
+      .filter(r => Number(r?.tour ?? r?.Tour ?? 0) === t)
+      .filter(r => (r?.nomListe || r?.NomListe || r?.listeId || r?.ListeID))
+      .map(r => ({
+        listeId: (r.listeId || r.ListeID || '').toString().trim(),
+        nomListe: (r.nomListe || r.NomListe || r.listeId || r.ListeID || '—').toString().trim(),
+        voix: Number(r.voix ?? r.Voix ?? r.voixMunicipal ?? r.VoixMunicipal ?? 0) || 0,
+        pctVoix: Number(r.pctVoix ?? r.PctVoix ?? r.pourcentage ?? 0),
+        eligible: typeof r.eligible === 'boolean' ? r.eligible : String(r.Eligible ?? '').toUpperCase() === 'TRUE',
+      }))
+      .filter(r => r.listeId && r.nomListe);
+
+    // Normalisation Seats_Community (pas forcément par tour)
+    const seatsCommunityRows = (Array.isArray(seatsCommunityRaw) ? seatsCommunityRaw : [])
+      .filter(r => (r?.nomListe || r?.NomListe || r?.listeId || r?.ListeID))
+      .map(r => ({
+        listeId: (r.listeId || r.ListeID || '').toString().trim(),
+        nomListe: (r.nomListe || r.NomListe || r.listeId || r.ListeID || '—').toString().trim(),
+        voix: Number(r.voixMunicipal ?? r.VoixMunicipal ?? r.voix ?? r.Voix ?? 0) || 0,
+        pctVoix: Number(r.pctMunicipal ?? r.PctMunicipal ?? r.pctVoix ?? r.PctVoix ?? r.pourcentage ?? 0),
+        eligible: typeof r.eligible === 'boolean' ? r.eligible : String(r.Eligible ?? '').toUpperCase() === 'TRUE',
+      }))
+      .filter(r => r.listeId && r.nomListe);
+
+    // 2) Calcul métier (on ne fait confiance qu'aux voix + %)
+    const totalMunicipal = Number(ELECTION_CONFIG.SEATS_MUNICIPAL_TOTAL) || 35;
+    const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 6;
+
+    const municipal = calculService
+      .calculerSiegesMunicipauxDepuisListes(
+        seatsMunicipalRows.map(r => ({
+          listeId: r.listeId,
+          nomListe: r.nomListe,
+          voix: r.voix,
+          pctVoix: Number.isFinite(r.pctVoix) ? r.pctVoix : null,
+          eligible: r.eligible
+        })),
+        totalMunicipal
+      )
+      .map(r => ({
+        ...r,
+        nomListe: r.nom || r.nomListe || '—',
+        pctVoix: Number(r.pourcentage ?? r.pctVoix ?? 0) || 0
+      }));
+
+    const communautaire = calculService
+      .calculerSiegesCommunautairesDepuisListes(
+        seatsCommunityRows.map(r => ({
+          listeId: r.listeId,
+          nomListe: r.nomListe,
+          voixMunicipal: r.voix,
+          pctMunicipal: Number.isFinite(r.pctVoix) ? r.pctVoix : null,
+          eligible: r.eligible
+        })),
+        totalCommunity
+      )
+      .map(r => ({
+        ...r,
+        nomListe: r.nom || r.nomListe || '—',
+        pctMunicipal: Number(r.pourcentage ?? r.pctMunicipal ?? r.pctVoix ?? 0) || 0
+      }));
+
+    if ((!municipal || municipal.length === 0) && (!communautaire || communautaire.length === 0)) {
+      throw new Error("Sièges : données insuffisantes pour exporter (tables Seats_* vides ou non renseignées).");
+    }
+
+    return { municipal, communautaire };
+  }
+
+  /**
+   * Export Excel (XLSX) des sièges
+   * - 1 fichier, 1 ou 2 feuilles selon disponibilité
+   */
+  async exportSiegesXLSX(municipal = [], communautaire = [], tour = 1, options = {}) {
+    const only = options?.only || 'all';
+
+    const wb = XLSX.utils.book_new();
+
+    if (only === 'all' || only === 'municipal') {
+      const rowsMunicipal = (Array.isArray(municipal) ? municipal : []).map(r => ({
+        'Liste': r.nomListe || r.nom || '—',
+        'Voix': Number(r.voix ?? 0) || 0,
+        '%': Number(r.pourcentage ?? r.pctVoix ?? 0) || 0,
+        'Prime': Number(r.siegesPrime ?? 0) || 0,
+        'Prop.': Number(r.siegesProportionnels ?? 0) || 0,
+        'Total sièges': Number(r.sieges ?? 0) || 0,
+        'Méthode': r.methode || (Number(r.siegesPrime ?? 0) > 0 ? `Prime (${r.siegesPrime}) + Proportionnelle (${r.siegesProportionnels ?? 0})` : `Proportionnelle (${r.siegesProportionnels ?? 0})`),
+        'Éligible (>=5%)': r.eligible ? 'Oui' : 'Non'
+      }));
+
+      if (rowsMunicipal.length > 0) {
+        const wsM = XLSX.utils.json_to_sheet(rowsMunicipal);
+        XLSX.utils.book_append_sheet(wb, wsM, `Municipal_T${Number(tour) || 1}`);
+      }
+    }
+
+    if (only === 'all' || only === 'communautaire') {
+      const rowsComm = (Array.isArray(communautaire) ? communautaire : []).map(r => ({
+        'Liste': r.nomListe || r.nom || '—',
+        'Voix': Number(r.voixMunicipal ?? r.voix ?? 0) || 0,
+        '%': Number(r.pourcentage ?? r.pctMunicipal ?? r.pctVoix ?? 0) || 0,
+        'Prime': Number(r.siegesPrime ?? 0) || 0,
+        'Prop.': Number(r.siegesProportionnels ?? 0) || 0,
+        'Total sièges': Number(r.sieges ?? 0) || 0,
+        'Méthode': r.methode || (Number(r.siegesPrime ?? 0) > 0 ? `Prime (${r.siegesPrime}) + Proportionnelle (${r.siegesProportionnels ?? 0})` : `Proportionnelle (${r.siegesProportionnels ?? 0})`),
+        'Éligible (>=5%)': r.eligible ? 'Oui' : 'Non'
+      }));
+
+      if (rowsComm.length > 0) {
+        const wsC = XLSX.utils.json_to_sheet(rowsComm);
+        XLSX.utils.book_append_sheet(wb, wsC, `Communautaire_T${Number(tour) || 1}`);
+      }
+    }
+
+    if (!wb.SheetNames || wb.SheetNames.length === 0) {
+      throw new Error("Sièges : rien à exporter (aucune feuille générée).");
+    }
+
+    const filename = generateFilename(`sieges_tour${Number(tour) || 1}`, 'xlsx');
+    this.exportToXLSX(wb, filename);
+
+    // Audit non bloquant
+    if (typeof auditService?.logExport === 'function') {
+      try {
+        await auditService.logExport('sieges', 'XLSX', { tour: Number(tour) || 1 });
+      } catch (e) {
+        console.warn('Audit export sièges XLSX non bloquant :', e);
+      }
+    }
+  }
+
+  /**
+   * Ouvre les sièges dans une nouvelle fenêtre pour impression (PDF via l'imprimante du navigateur)
+   */
+  async openSiegesForPrint(municipal = [], communautaire = [], tour = 1) {
+    const html = this.generateSiegesHTML(municipal, communautaire, tour);
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    // Audit non bloquant
+    if (typeof auditService?.logExport === 'function') {
+      try {
+        await auditService.logExport('sieges', 'PDF_HTML', { tour: Number(tour) || 1 });
+      } catch (e) {
+        console.warn('Audit export sièges PDF non bloquant :', e);
+      }
+    }
+  }
+
+  /**
+   * Génère le HTML d'export des sièges (municipal + communautaire)
+   */
+  generateSiegesHTML(municipal = [], communautaire = [], tour = 1) {
+    const t = Number(tour) || 1;
+    const totalMunicipal = Number(ELECTION_CONFIG.SEATS_MUNICIPAL_TOTAL) || 35;
+    const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 6;
+
+    const renderTable = (rows, title, total) => {
+      const safe = Array.isArray(rows) ? rows : [];
+      const body = safe.map(r => {
+        const nom = (r.nomListe || r.nom || '—');
+        const voix = Number(r.voix ?? r.voixMunicipal ?? 0) || 0;
+        const pct = Number(r.pourcentage ?? r.pctVoix ?? r.pctMunicipal ?? 0) || 0;
+        const prime = Number(r.siegesPrime ?? 0) || 0;
+        const prop = Number(r.siegesProportionnels ?? 0) || 0;
+        const tot = Number(r.sieges ?? 0) || 0;
+        const methode = r.methode || (prime > 0 ? `Prime (${prime}) + Proportionnelle (${prop})` : `Proportionnelle (${prop})`);
+        return `
+          <tr>
+            <td><strong>${this.escapeHtml(nom)}</strong></td>
+            <td style="text-align:right;">${formatNumber(voix)}</td>
+            <td style="text-align:right;">${formatPercent(pct)}</td>
+            <td style="text-align:center;">${prime}</td>
+            <td style="text-align:center;">${prop}</td>
+            <td style="text-align:center;"><strong>${tot}</strong></td>
+            <td>${this.escapeHtml(methode)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <h2>${this.escapeHtml(title)}</h2>
+        <div class="meta">Total sièges à attribuer : <strong>${total}</strong> — Tour ${t}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Liste</th>
+              <th>Voix</th>
+              <th>%</th>
+              <th>Prime</th>
+              <th>Prop.</th>
+              <th>Total sièges</th>
+              <th>Méthode</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${body || '<tr><td colspan="7" style="text-align:center;">Aucune donnée</td></tr>'}
+          </tbody>
+        </table>
+      `;
+    };
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Répartition des sièges - Tour ${t}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 28px; color: #000; }
+    h1 { margin: 0 0 12px 0; color: #0055A4; }
+    h2 { margin: 26px 0 8px 0; color: #0055A4; }
+    .meta { margin: 0 0 10px 0; padding: 10px 12px; background: #eef6ff; border-left: 4px solid #0055A4; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0 18px 0; }
+    th, td { border: 1px solid #333; padding: 8px; font-size: 12px; vertical-align: top; }
+    th { background: #f2f2f2; }
+    .footer { margin-top: 18px; font-size: 11px; color: #555; }
+    @media print { body { margin: 18mm; } }
+  </style>
+</head>
+<body>
+  <h1>Répartition des sièges</h1>
+  ${renderTable(municipal, 'Conseil Municipal', totalMunicipal)}
+  ${renderTable(communautaire, 'Conseil Communautaire (SQY)', totalCommunity)}
+  <div class="footer">Généré le ${this.escapeHtml(formatDateTime(new Date()))}</div>
+  <script>
+    window.onload = () => {
+      setTimeout(() => window.print(), 300);
+    };
+  </script>
+</body>
+</html>`;
+  }
+
+  /**
+   * Export XLSX côté client (Blob)
+   */
+  exportToXLSX(workbook, filename) {
+    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    this.downloadBlob(blob, filename);
+  }
+
+  /**
+   * Échappement HTML minimal
+   */
+  escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+
+/**
    * Télécharge un blob
    */
   downloadBlob(blob, filename) {
