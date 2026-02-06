@@ -1633,7 +1633,21 @@ const data = (auditData || [])
     th, td { border: 1px solid #333; padding: 8px; font-size: 12px; vertical-align: top; }
     th { background: #f2f2f2; }
     .footer { margin-top: 18px; font-size: 11px; color: #555; }
-    @media print { body { margin: 18mm; } }
+    
+    .print-btn {
+      position: fixed;
+      left: 20px;
+      bottom: 20px;
+      padding: 10px 14px;
+      border: 1px solid #0b3b7a;
+      background: #0b3b7a;
+      color: #fff;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .print-btn:hover { opacity: 0.92; }
+@media print { body { margin: 18mm; } }
   </style>
 </head>
 <body>
@@ -1641,11 +1655,8 @@ const data = (auditData || [])
   ${renderTable(municipal, 'Conseil Municipal', totalMunicipal)}
   ${renderTable(communautaire, 'Conseil Communautaire (SQY)', totalCommunity)}
   <div class="footer">Généré le ${this.escapeHtml(formatDateTime(new Date()))}</div>
-  <script>
-    window.onload = () => {
-      setTimeout(() => window.print(), 300);
-    };
-  </script>
+
+  <button class="no-print print-btn" onclick="window.print()">Imprimer</button>
 </body>
 </html>`;
   }
