@@ -179,7 +179,7 @@ const handleFieldChange = (field, value) => {
     const raw =
       (candidat && (candidat.id ?? candidat.ID ?? candidat.Id ?? candidat.code ?? candidat.key ?? candidat.listeId ?? candidat.liste ?? candidat.numero)) ?? null;
     const s = raw != null ? String(raw).trim() : '';
-    if (/^L[1-5]$/i.test(s)) return s.toUpperCase();
+    if (/^L\d+$/i.test(s)) return s.toUpperCase();
     return `L${index + 1}`;
   };
 
@@ -191,12 +191,29 @@ const handleFieldChange = (field, value) => {
   };
 
   const buildDisplayedCandidates = () => {
-    const base = Array.isArray(candidats) ? candidats.slice(0, 5) : [];
-    const out = [];
-    for (let i = 0; i < 5; i++) {
-      out.push(base[i] ?? {});
-    }
-    return out;
+    // Afficher uniquement les listes/candidats actifs pour le tour courant
+    // => Le bloc "Voix par candidat" s'adapte automatiquement (2 candidats => 2 lignes, etc.)
+    const tour = electionState?.tourActuel ?? 1;
+    const isActiveForTour = (cand) => {
+      if (!cand || typeof cand !== 'object') return false;
+      // Si les flags actifT1/actifT2 ne sont pas fournis, on considère l'entrée comme active
+      if (tour === 1) return (cand.actifT1 === undefined ? true : !!cand.actifT1);
+      return (cand.actifT2 === undefined ? true : !!cand.actifT2);
+    };
+
+    const base = Array.isArray(candidats) ? candidats.filter(isActiveForTour) : [];
+
+    // Tri naturel par slot (L1, L2, L10, ...)
+    const slotOrder = (cand, index) => {
+      const slot = getCandidateSlot(cand, index);
+      const m = /^L(\d+)$/i.exec(String(slot || '').trim());
+      return m ? parseInt(m[1], 10) : 9999;
+    };
+
+    return base
+      .map((c, i) => ({ candidat: c, index: i }))
+      .sort((a, b) => slotOrder(a.candidat, a.index) - slotOrder(b.candidat, b.index))
+      .map(x => x.candidat);
   };
 
 const bureauData = bureaux.find(b => b.id === selectedBureau);
