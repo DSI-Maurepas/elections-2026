@@ -41,7 +41,6 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
   }, []);
 
   const isBureauResponsive = Boolean(isBureauVote && isResponsive);
-  const isAdmin = !isBureauVote;
   // Bureaux
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
 
@@ -396,7 +395,7 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
             <div className="metric-card">
               <div className="metric-head">
                 <span className="metric-emoji">{isBureauResponsive ? "⏱️" : "🚀"}</span>
-                <span className="metric-title">{isBureauResponsive ? "Heure la plus chargée" : "Plus forte progression (votants)"}</span>
+                <span className="metric-title">{isBureauResponsive ? "⏱️ Heure la plus chargée" : "Plus forte progression (votants)"}</span>
               </div>
               <div className="metric-value">
                 {isBureauResponsive ? (
@@ -411,7 +410,7 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
             <div className="metric-card">
               <div className="metric-head">
                 <span className="metric-emoji">🐢</span>
-                <span className="metric-title">{isBureauResponsive ? "Heure la plus calme" : "Moins forte progression (votants)"}</span>
+                <span className="metric-title">{isBureauResponsive ? "🐢 Heure la plus calme" : "Moins forte progression (votants)"}</span>
               </div>
               <div className="metric-value">
                 {isBureauResponsive ? (
@@ -468,7 +467,7 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
             </div>
             )}
 
-            {isAdmin && (
+            {!isBureauVote && (
             <div className="metric-card">
               <div className="metric-head">
                 <span className="metric-emoji">⏱️</span>
@@ -482,80 +481,6 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
               </div>
             </div>
             )}
-
-            {isAdmin && (
-            <div className="metric-card" style={{ borderLeft: '6px solid #1e88e5' }}>
-              <div className="metric-head">
-                <span className="metric-emoji">🏢</span>
-                <span className="metric-title">Bureau et horaire le plus chargé / le plus calme</span>
-              </div>
-              <div className="metric-value">
-                <strong>Chargé</strong> : {chiffresCles.maxProg.bureauLabel} — {chiffresCles.maxProg.heureDebut}→{chiffresCles.maxProg.heureFin}
-                {' '}(<strong>+{chiffresCles.maxProg.delta.toLocaleString('fr-FR')}</strong>)<br />
-                <strong>Calme</strong> : {chiffresCles.minProg.bureauLabel} — {chiffresCles.minProg.heureDebut}→{chiffresCles.minProg.heureFin}
-                {' '}(<strong>+{chiffresCles.minProg.delta.toLocaleString('fr-FR')}</strong>)
-              </div>
-            </div>
-            )}
-
-            {isAdmin && (
-            <div className="metric-card" style={{ borderLeft: '6px solid #8e24aa' }}>
-              <div className="metric-head">
-                <span className="metric-emoji">🧍‍♂️</span>
-                <span className="metric-title">Bureau avec la plus forte abstention</span>
-              </div>
-              <div className="metric-value">
-                {chiffresCles.maxAbst.bureauLabel} : <strong>{chiffresCles.maxAbst.abst.toLocaleString('fr-FR')}</strong>
-                {chiffresCles.maxAbst.inscrits > 0 ? ` (sur ${chiffresCles.maxAbst.inscrits.toLocaleString('fr-FR')} inscrits)` : ''}
-              </div>
-              <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.maxAbst.inscrits > 0 ? (chiffresCles.maxAbst.abst / chiffresCles.maxAbst.inscrits) * 100 : 0))}%` }} /></div>
-            </div>
-            )}
-
-            {isAdmin && (
-            <div className="metric-card" style={{ borderLeft: '6px solid #ef6c00' }}>
-              <div className="metric-head">
-                <span className="metric-emoji">🚫</span>
-                <span className="metric-title">Nombre d'inscrits n'ayant pas voté</span>
-              </div>
-              <div className="metric-value">
-                <strong>{Math.max(0, stats.totalInscrits - stats.totalVotants).toLocaleString('fr-FR')}</strong>
-              </div>
-              {stats.totalInscrits > 0 && (
-                <div style={{ marginTop: 4, fontSize: '0.9em', opacity: 0.85 }}>
-                  soit <strong>{((Math.max(0, stats.totalInscrits - stats.totalVotants) / stats.totalInscrits) * 100).toFixed(2)}%</strong>
-                </div>
-              )}
-            </div>
-            )}
-
-            {isAdmin && (
-            <div className="metric-card" style={{ borderLeft: '6px solid #d32f2f' }}>
-              <div className="metric-head">
-                <span className="metric-emoji">🧊</span>
-                <span className="metric-title">Bureau avec le % de votants le plus faible</span>
-              </div>
-              <div className="metric-value">
-                {chiffresCles.minTaux.bureauLabel} : <strong>{chiffresCles.minTaux.taux.toFixed(2)}%</strong>
-                {' '}({chiffresCles.minTaux.votants.toLocaleString('fr-FR')} / {chiffresCles.minTaux.inscrits.toLocaleString('fr-FR')})
-              </div>
-              <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.minTaux.taux))}%` }} /></div>
-            </div>
-            )}
-
-            {isAdmin && (
-            <div className="metric-card" style={{ borderLeft: '6px solid #2e7d32' }}>
-              <div className="metric-head">
-                <span className="metric-emoji">🏅</span>
-                <span className="metric-title">Bureau avec le % de votants le plus élevé</span>
-              </div>
-              <div className="metric-value">
-                {chiffresCles.maxTaux.bureauLabel} : <strong>{chiffresCles.maxTaux.taux.toFixed(2)}%</strong>
-                {' '}({chiffresCles.maxTaux.votants.toLocaleString('fr-FR')} / {chiffresCles.maxTaux.inscrits.toLocaleString('fr-FR')})
-              </div>
-              <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.maxTaux.taux))}%` }} /></div>
-            </div>
-            )}
             {false && (
 <div className="metric-card">
               <div className="metric-head">
@@ -566,39 +491,30 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
             </div>
             )}
 
-
-            {!isAdmin && (
-
-
+            {!isBureauVote && (
               <>
+                <div className="metric-card">
+                  <div className="metric-head">
+                    <span className="metric-emoji">⚪</span>
+                    <span className="metric-title">% de blancs</span>
+                  </div>
+                  <div className="metric-value">
+                    {stats.pctBlancs == null ? 'Données non disponibles' : <>Blancs / votants : <strong>{stats.pctBlancs.toFixed(2)}%</strong></>}
+                  </div>
+                </div>
 
-
-            <div className="metric-card">
-              <div className="metric-head">
-                <span className="metric-emoji">⚪</span>
-                <span className="metric-title">% de blancs</span>
-              </div>
-              <div className="metric-value">
-                {stats.pctBlancs == null ? 'Données non disponibles' : <>Blancs / votants : <strong>{stats.pctBlancs.toFixed(2)}%</strong>{isAdmin ? <> (<strong>{(stats.totalBlancs ?? 0).toLocaleString('fr-FR')}</strong>)</> : null}</>}
-              </div>
-            </div>
-
-<div className="metric-card">
-              <div className="metric-head">
-                <span className="metric-emoji">⚫</span>
-                <span className="metric-title">% de nuls</span>
-              </div>
-              <div className="metric-value">
-                {stats.pctNuls == null ? 'Données non disponibles' : <>Nuls / votants : <strong>{stats.pctNuls.toFixed(2)}%</strong>{isAdmin ? <> (<strong>{(stats.totalNuls ?? 0).toLocaleString('fr-FR')}</strong>)</> : null}</>}
-              </div>
-            </div>
-
-
+                <div className="metric-card">
+                  <div className="metric-head">
+                    <span className="metric-emoji">⚫</span>
+                    <span className="metric-title">% de nuls</span>
+                  </div>
+                  <div className="metric-value">
+                    {stats.pctNuls == null ? 'Données non disponibles' : <>Nuls / votants : <strong>{stats.pctNuls.toFixed(2)}%</strong></>}
+                  </div>
+                </div>
               </>
-
-
             )}
-</div>
+          </div>
         )}
       </div>
     </div>
