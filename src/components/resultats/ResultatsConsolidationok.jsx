@@ -310,7 +310,7 @@ const ResultatsConsolidation = ({ electionState}) => {
             )}
           </div>
         </div>
-        {(isBureau && (electionState.tourActuel === 2 || electionState.tourActuel === 1)) ? (
+        {(isBureau && electionState.tourActuel === 2) ? (
           <>
             {/* ===== BV — Tour 2 : 6 blocs (2 lignes) ===== */}
             <div className="stats-grid-3">
