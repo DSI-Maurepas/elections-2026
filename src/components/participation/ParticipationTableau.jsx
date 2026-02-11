@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
+import { isBV, getAuthState } from '../../services/authService';
 
 /**
  * Tableau de consolidation de la participation
- * Vue globale tous bureaux confondus
+ * Vue globale tous bureaux (ADMIN/GLOBAL) ou vue verticale (BV)
  */
-const ParticipationTableau = ({ electionState}) => {
+const ParticipationTableau = ({ electionState }) => {
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
   const { 
     data: participation, 
@@ -27,6 +28,21 @@ const ParticipationTableau = ({ electionState}) => {
     '19h': 0,
     '20h': 0
   });
+
+  // Détecter si l'utilisateur est un BV
+  const isBureauVote = useMemo(() => isBV(getAuthState()), []);
+  const currentBureauId = useMemo(() => {
+    const auth = getAuthState();
+    return auth?.bureauId || null;
+  }, []);
+
+  // ⚠️ CORRECTION : Fonction de normalisation des IDs (extrait le numéro)
+  const normalizeBureauId = (value) => {
+    if (value === null || value === undefined) return '';
+    const s = String(value).trim().toUpperCase();
+    const m = s.match(/(\d+)/);
+    return m ? m[1] : s;
+  };
 
   useEffect(() => {
     loadBureaux();
@@ -70,8 +86,10 @@ const ParticipationTableau = ({ electionState}) => {
     setTotaux(newTotaux);
   }, [participation]);
 
+  // ⚠️ CORRECTION : Normaliser les IDs pour la comparaison
   const getBureauData = (bureauId) => {
-    return participation.find(p => p.bureauId === bureauId);
+    const normalized = normalizeBureauId(bureauId);
+    return participation.find(p => normalizeBureauId(p.bureauId) === normalized);
   };
 
   const calculateRate = (votants, inscrits) => {
@@ -79,13 +97,127 @@ const ParticipationTableau = ({ electionState}) => {
     return ((votants / inscrits) * 100).toFixed(2);
   };
 
-
-  // Heures des remontées (09h -> 20h)
   const HOURS = ['09h','10h','11h','12h','13h','14h','15h','16h','17h','18h','19h','20h'];
 
+  // ========== AFFICHAGE VERTICAL POUR BV ==========
+  if (isBureauVote && currentBureauId) {
+    const bureau = bureaux.find(b => normalizeBureauId(b.id) === normalizeBureauId(currentBureauId));
+    const data = getBureauData(currentBureauId);
+    const inscrits = bureau?.inscrits || 0;
+
+    return (
+      <div className="participation-tableau participation-tableau--vertical">
+        <h3>📊 Consolidation de la participation <br /> Tour {electionState.tourActuel}</h3>
+        
+        <div className="bureau-info">
+          <strong>Bureau :</strong> {bureau?.nom || currentBureauId} <br />
+          <strong>Inscrits :</strong> {inscrits.toLocaleString('fr-FR')}
+        </div>
+
+        <div className="tableau-vertical-container">
+          <table className="participation-table participation-table--vertical">
+            <thead>
+              <tr>
+                <th className="hour-col-vertical">Heure</th>
+                <th className="votants-col-vertical">Votants</th>
+                <th className="percent-col-vertical">Pourcentage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {HOURS.map((h) => {
+                const field = `votants${h}`;
+                const votants = data?.[field] || 0;
+                const rate = calculateRate(votants, inscrits);
+                const isEmpty = votants === 0;
+
+                return (
+                  <tr key={h} className={isEmpty ? 'is-empty' : 'is-filled'}>
+                    <td className="hour-label"><strong>{h}</strong></td>
+                    <td className="number">{votants.toLocaleString('fr-FR')}</td>
+                    <td className="percent">{rate}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="legend">
+          <p><span className="legend-item cell-empty" aria-hidden="true"></span> Cellule heure non renseignée (fond rouge)</p>
+        </div>
+
+        <style>{`
+/* ⚠️ CORRECTION : Styles pour affichage vertical avec bords arrondis + ombre */
+.participation-tableau--vertical .bureau-info {
+  background: #e3f2fd;
+  padding: 12px 20px;
+  margin: 16px 0;
+  border-left: 4px solid #2196F3;
+  font-size: 1rem;
+}
+
+.tableau-vertical-container {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  margin: 16px 0;
+}
+
+.participation-table--vertical {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+}
+
+.participation-table--vertical th {
+  background: #1e3c72;
+  color: white;
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+}
+
+.participation-table--vertical td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.participation-table--vertical .hour-label {
+  font-weight: bold;
+  width: 100px;
+}
+
+.participation-table--vertical .number,
+.participation-table--vertical .percent {
+  text-align: right;
+}
+
+/* ⚠️ CORRECTION : Alternance de couleurs pour lisibilité */
+.participation-table--vertical tbody tr:nth-child(odd) td {
+  background: white;
+}
+
+.participation-table--vertical tbody tr:nth-child(even) td {
+  background: #f9f9f9;
+}
+
+.participation-table--vertical tr.is-empty td {
+  background: #ffe0e0 !important;
+}
+
+.participation-table--vertical tbody tr:hover td {
+  background: #f0f0f0 !important;
+}
+        `}</style>
+      </div>
+    );
+  }
+
+  // ========== AFFICHAGE HORIZONTAL POUR ADMIN/GLOBAL ==========
   return (
     <div className="participation-tableau">
-      <h2>📊 Consolidation de la participation <br /> Tour {electionState.tourActuel}</h2>
+      <h3>📊 Consolidation de la participation <br /> Tour {electionState.tourActuel}</h3>
 
       <div className="tableau-scroll">
         <table className="participation-table participation-table--compact">
@@ -102,7 +234,6 @@ const ParticipationTableau = ({ electionState}) => {
           <tbody>
             {bureaux.map((bureau, index) => {
               const data = getBureauData(bureau.id);
-              // IMPORTANT : toujours utiliser bureau.inscrits (config) et non data.inscrits (saisie)
               const inscrits = bureau.inscrits || 0;
 
               return (

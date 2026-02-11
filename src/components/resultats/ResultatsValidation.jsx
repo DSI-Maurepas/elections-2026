@@ -214,7 +214,8 @@ const ResultatsValidation = ({ electionState}) => {
         </div>
       </div>
 
-      {/* Tableau */}
+      {/* Tableau — uniquement les bureaux en erreur ou avertissement */}
+      {(stats.errorCount > 0 || stats.warningCount > 0) && (
       <div className="validation-table-wrap">
         <table className="validation-table modern">
           <thead>
@@ -226,7 +227,9 @@ const ResultatsValidation = ({ electionState}) => {
             </tr>
           </thead>
           <tbody>
-            {validation.map((v) => (
+            {validation
+              .filter((v) => v.status === 'error' || v.status === 'warning')
+              .map((v) => (
               <tr key={v.id} className={`row-${v.status}`}>
                 <td data-label="Bureau" className="cell-bureau">
                   <div className="bureau-main">
@@ -234,10 +237,8 @@ const ResultatsValidation = ({ electionState}) => {
                   </div>
                 </td>
                 <td data-label="Statut" className="cell-statut">
-                  {v.status === 'success' && <span className="status-emoji" title="Conforme" aria-label="Conforme">🟢</span>}
                   {v.status === 'error' && <span className="status-emoji" title="Erreurs" aria-label="Erreurs">🔴</span>}
                   {v.status === 'warning' && <span className="status-emoji" title="À vérifier" aria-label="À vérifier">🟠</span>}
-                  {v.status === 'pending' && <span className="status-emoji" title="En attente" aria-label="En attente">⏳</span>}
                 </td>
                 <td data-label="Erreurs" className="cell-erreurs">{v.errors.length ? v.errors.join(', ') : '—'}</td>
                 <td data-label="Avertissements" className="cell-avert">{v.warnings.length ? v.warnings.join(', ') : '—'}</td>
@@ -246,6 +247,7 @@ const ResultatsValidation = ({ electionState}) => {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 };

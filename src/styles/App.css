@@ -3388,3 +3388,351 @@ input:focus, select:focus, textarea:focus {
   width: 9px;
   height: 9px;
 }
+
+/* ================================================================
+   BARRES DE PROGRESSION RÉSULTATS - PLUS ÉPAISSES
+   ================================================================ */
+
+/* Barre de progression dans les cartes top 2 qualifiés */
+.top3-progress-bar {
+  width: 100%;
+  height: 6px; /* Plus épais (était 2-3px avant) */
+  margin-top: 8px;
+  border-radius: 3px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* Barre de progression dans la section "Autres candidats" */
+.classement-progress-bar {
+  width: 100%;
+  height: 5px; /* Plus épais */
+  margin-top: 6px;
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* Ajustements pour les cartes top3 */
+.top3-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/* Ajustements pour les items de classement */
+.classement-item {
+  position: relative;
+  padding-bottom: 12px; /* Espace pour la barre */
+}
+
+
+/* ================================================================
+   BARRES DE PROGRESSION RÉSULTATS - PROPORTIONNELLES AU %
+   Ajouté le 06/02/2026 - Correction
+   ================================================================ */
+
+/* === BARRES TOP 2 QUALIFIÉS === */
+
+/* Container de la barre (fond gris) */
+.top3-progress-container {
+  width: 100%;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+/* Barre de remplissage (couleur, width = % de voix) */
+.top3-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.top3-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/* === SECTION "AUTRES CANDIDATS" - LAYOUT COMPACT === */
+
+.classement-item-compact {
+  display: grid;
+  grid-template-columns: 50px 1fr auto auto auto;
+  grid-template-rows: auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  background: white;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.classement-item-compact:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* Numéro dans un cercle grisé */
+.classement-rank-circle {
+  grid-column: 1;
+  grid-row: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+/* Nom du candidat */
+.classement-item-compact .classement-name {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e3c72;
+}
+
+/* Nombre de voix */
+.classement-item-compact .classement-voix {
+  grid-column: 3;
+  grid-row: 1;
+  padding: 4px 14px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(239, 168, 68, 0.32);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 16px;
+  color: #3f3838;
+}
+
+/* Pourcentage */
+.classement-item-compact .classement-pct {
+  grid-column: 4;
+  grid-row: 1;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+/* Badge ÉLIMINÉ compact */
+.badge.eliminated-compact {
+  grid-column: 5;
+  grid-row: 1;
+  padding: 4px 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  background: rgba(239, 68, 68, 0.32);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 12px;
+  color: #991b1b;
+  white-space: nowrap;
+}
+
+/* Barre de progression (toute la largeur en dessous) */
+.classement-progress-container {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  height: 9px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+/* Barre de remplissage (width = % de voix) */
+.classement-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* === RESPONSIVE === */
+
+@media (max-width: 900px) {
+  .classement-item-compact {
+    grid-template-columns: 40px 1fr auto auto auto;
+    gap: 8px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+  }
+
+  .classement-rank-circle {
+    width: 35px;
+    height: 35px;
+    font-size: 1rem;
+  }
+
+  .classement-item-compact .classement-name {
+    font-size: 0.95rem;
+  }
+
+  .classement-item-compact .classement-voix,
+  .classement-item-compact .classement-pct {
+    font-size: 0.9rem;
+  }
+
+  .badge.eliminated-compact {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+  }
+}
+
+@media (max-width: 600px) {
+  /* En très petit écran, on empile le badge sur une 2ème ligne */
+  .classement-item-compact {
+    grid-template-columns: 35px 1fr auto auto;
+    grid-template-rows: auto auto auto;
+  }
+
+  .badge.eliminated-compact {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    justify-self: start;
+    margin-top: 4px;
+  }
+
+  .classement-progress-container {
+    grid-row: 3;
+    margin-top: 8px;
+  }
+}
+
+/* =========================================================
+   MODAL DE CONFIRMATION — Charté aux couleurs de l'application
+   ========================================================= */
+
+.ui-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: ui-modal-fadeIn 200ms ease;
+}
+
+@keyframes ui-modal-fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.ui-modal {
+  width: 92%;
+  max-width: 480px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 20px;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.22),
+    0 0 0 1px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  animation: ui-modal-slideUp 250ms ease;
+}
+
+@keyframes ui-modal-slideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.ui-modal-title {
+  padding: 20px 24px 12px;
+  font-family: var(--font-family-serif, Georgia, serif);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--color-primary, #0055A4);
+  letter-spacing: -0.01em;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.ui-modal-message {
+  padding: 16px 24px 24px;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  color: #334155;
+}
+
+.ui-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 0 24px 20px;
+}
+
+.ui-modal-actions .btn {
+  padding: 10px 22px;
+  font-size: 0.95rem;
+  font-weight: 650;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.ui-modal-actions .btn-secondary {
+  background: rgba(15, 23, 42, 0.08);
+  color: #475569;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+}
+
+.ui-modal-actions .btn-secondary:hover {
+  background: rgba(15, 23, 42, 0.14);
+  color: #1e293b;
+}
+
+.ui-modal-actions .btn-primary {
+  background: linear-gradient(135deg, var(--color-primary, #0055A4), var(--color-primary-dark, #003D7A));
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 85, 164, 0.30);
+}
+
+.ui-modal-actions .btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 85, 164, 0.40);
+}
+
+/* Toast notifications */
+.ui-toasts {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 400px;
+}
+
+.ui-toast {
+  padding: 14px 20px;
+  border-radius: 14px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #ffffff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  animation: ui-toast-slideIn 300ms ease;
+}
+
+@keyframes ui-toast-slideIn {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.ui-toast.success { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.ui-toast.error   { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.ui-toast.warn    { background: linear-gradient(135deg, #f59e0b, #d97706); color: #1e293b; }
+.ui-toast.info    { background: linear-gradient(135deg, #3b82f6, #2563eb); }

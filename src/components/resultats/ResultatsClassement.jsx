@@ -9,37 +9,46 @@ const n = (v) => {
 };
 
 const getCandidateName = (c, idx) => {
-  const name = c?.nom ?? c?.name ?? c?.Nom ?? c?.label;
-  return (name && String(name).trim()) ? String(name).trim() : `Candidat ${idx + 1}`;
+  // Priorité : nomListe (court), puis teteListePrenom + teteListeNom, puis fallback
+  const nomListe = (c?.nomListe ?? '').toString().trim();
+  if (nomListe) return nomListe;
+  const prenom = (c?.teteListePrenom ?? '').toString().trim();
+  const nom = (c?.teteListeNom ?? '').toString().trim();
+  const full = [prenom, nom].filter(Boolean).join(' ');
+  if (full) return full;
+  // Anciens formats (compatibilité)
+  const legacy = c?.nom ?? c?.name ?? c?.Nom ?? c?.label;
+  return (legacy && String(legacy).trim()) ? String(legacy).trim() : `Candidat ${idx + 1}`;
 };
 
 const getCandidateId = (c, idx) => {
-  const id = c?.id ?? c?.code ?? c?.key;
-  if (id && String(id).trim()) return String(id).trim();
-  // fallback : L1..L5
+  // Priorité : listeId (champ réel Sheets), puis id/code/key (anciens formats)
+  const listeId = c?.listeId ?? c?.id ?? c?.code ?? c?.key;
+  if (listeId && String(listeId).trim()) return String(listeId).trim();
   return `L${idx + 1}`;
 };
 
-const ResultatsClassement = ({ electionState }) => {
-  // IMPORTANT : useGoogleSheets attend un nom d'onglet (string), pas un numéro de tour.
-  // Une régression passée provoquait : Unable to parse range: '1'!A:Z
-  const tour = Number(electionState?.activeTour ?? electionState?.tourActuel ?? 1);
-  const sheetResultats = tour === 1 ? 'Resultats_T1' : 'Resultats_T2';
+const ResultatsClassement = ({ electionState}) => {
+  const tourActuel = electionState?.tourActuel || 1;
 
-  const { data: resultatsRaw } = useGoogleSheets(sheetResultats);
-  const { data: candidatsRaw } = useGoogleSheets('Candidats');
-
+  // Deux appels séparés à useGoogleSheets (pattern standard)
+  const { data: candidats } = useGoogleSheets('Candidats');
+  const { data: resultatsRaw } = useGoogleSheets(tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2');
+  
   const resultats = Array.isArray(resultatsRaw) ? resultatsRaw : [];
-  const candidats = Array.isArray(candidatsRaw) ? candidatsRaw : [];
+  const candidatsArray = useMemo(() => {
+    const list = Array.isArray(candidats) ? candidats : [];
+    return list.filter((c) => (tourActuel === 1 ? !!c.actifT1 : !!c.actifT2));
+  }, [candidats, tourActuel]);
 
   const totalExprimes = useMemo(() => {
     return resultats.reduce((acc, r) => acc + n(r.exprimes ?? r.Exprimes), 0);
   }, [resultats]);
 
   const classement = useMemo(() => {
-    if (!candidats.length) return [];
+    if (!candidatsArray.length) return [];
 
-    const totals = candidats.map((c, idx) => {
+    const totals = candidatsArray.map((c, idx) => {
       const id = getCandidateId(c, idx);
       const totalVoix = resultats.reduce((acc, r) => {
         const voixObj = r.voix || r.Voix || {};
@@ -59,17 +68,17 @@ const ResultatsClassement = ({ electionState }) => {
       }));
 
     return sorted;
-  }, [candidats, resultats, totalExprimes]);
+  }, [candidatsArray, resultats, totalExprimes]);
 
-  const top3 = classement.slice(0, 3);
-  const others = classement.slice(3);
+  const top2 = classement.slice(0, 2); // Seulement les 2 qualifiés
+  const others = classement.slice(2);  // Tous les éliminés (à partir du 3ème)
 
   return (
     <section className="resultats-section">
 
-      {/* Top 3 (et uniquement top 3 ici pour éviter tout doublon visuel) */}
+      {/* Top 2 qualifiés uniquement */}
       <div className="top3-grid">
-        {top3.map((candidat, index) => {
+        {top2.map((candidat, index) => {
           const rank = index + 1;
           const color = COLORS[(rank - 1) % COLORS.length];
           const isQualifie = rank <= 2;
@@ -80,7 +89,7 @@ const ResultatsClassement = ({ electionState }) => {
               style={{ borderLeftColor: color }}
             >
               <div className="top3-rank" style={{ color }}>{rank}</div>
-              <div className="candidate-card">
+              <div className="top3-content">
                 <div className="top3-name">{candidat.name}</div>
                 <div className="top3-badge">
                   {isQualifie ? (
@@ -91,14 +100,11 @@ const ResultatsClassement = ({ electionState }) => {
                 </div>
               </div>
               <div className="top3-stats">
-                <div className="top3-meta">
-                  <span className="top3-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</span>
-                  <span className="top3-pct">{candidat.pct.toFixed(2)}%</span>
-                </div>
-                <div className="top3-bar">
-                  <div className="bar-track">
-                    <div className="bar-fill" style={{ width: `${Math.min(100, candidat.pct)}%`, background: color }} />
-                  </div>
+                <div className="top3-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</div>
+                <div className="top3-pct">{candidat.pct.toFixed(2)}%</div>
+                {/* Barre de progression proportionnelle au % */}
+                <div className="top3-progress-container">
+                  <div className="top3-progress-fill" style={{ width: `${candidat.pct}%`, backgroundColor: color }}></div>
                 </div>
               </div>
             </div>
@@ -106,44 +112,33 @@ const ResultatsClassement = ({ electionState }) => {
         })}
       </div>
 
-      {/* Autres candidats (optionnel) */}
+      {/* Autres candidats (tous les éliminés) - COMPACT SUR UNE LIGNE */}
       {others.length > 0 && (
         <div className="classement-list">
           <div className="classement-subtitle">Autres candidats</div>
-
           {others.map((candidat, idx) => {
-            const rank = idx + 4;
+            const rank = idx + 3; // Commence au rang 3 (3ème, 4ème, 5ème...)
             const color = COLORS[(rank - 1) % COLORS.length];
-            const isQualifie = rank <= 2;
-
             return (
-              <div
-                key={`${candidat.id}-${rank}`}
-                className={`top3-card other-card ${isQualifie ? 'qualified' : 'eliminated'}`}
-                style={{ borderLeftColor: color }}
-              >
-                <div className="other-row">
-                  <div className="other-left">
-                    <div className="top3-rank" style={{ color }}>{rank}</div>
-                    <div className="other-name">{candidat.name}</div>
-                  </div>
-
-                  <div className="other-meta">
-                    <span className="other-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</span>
-                    <span className="other-pct">{candidat.pct.toFixed(2)}%</span>
-
-                    {isQualifie ? (
-                      <span className="badge qualified">✅ QUALIFIÉ</span>
-                    ) : (
-                      <span className="badge eliminated">⛔ ÉLIMINÉ</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="top3-bar">
-                  <div className="bar-track">
-                    <div className="bar-fill" style={{ width: `${Math.min(100, candidat.pct)}%`, background: color }} />
-                  </div>
+              <div key={`${candidat.id}-${rank}`} className="classement-item-compact">
+                {/* Numéro dans un cercle grisé */}
+                <div className="classement-rank-circle" style={{ color }}>{rank}</div>
+                
+                {/* Nom du candidat */}
+                <div className="classement-name">{candidat.name}</div>
+                
+                {/* Voix */}
+                <div className="classement-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</div>
+                
+                {/* Pourcentage */}
+                <div className="classement-pct">{candidat.pct.toFixed(2)}%</div>
+                
+                {/* Badge ÉLIMINÉ */}
+                <span className="badge eliminated-compact">⛔ ÉLIMINÉ</span>
+                
+                {/* Barre de progression proportionnelle */}
+                <div className="classement-progress-container">
+                  <div className="classement-progress-fill" style={{ width: `${candidat.pct}%`, backgroundColor: color }}></div>
                 </div>
               </div>
             );

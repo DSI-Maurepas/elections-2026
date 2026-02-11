@@ -350,18 +350,11 @@ export default function App() {
                         className="btn btn-warning"
                         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', fontSize: '1em', fontWeight: 600 }}
                         onClick={async () => {
-                          const ok = await uiService.confirm({
-                            title: '⚠️ Retour au Tour 1',
-                            message: 'Voulez-vous vraiment revenir au Tour 1 ?\n\nLes données du Tour 2 seront conservées mais le tour actif sera le Tour 1.',
-                            confirmText: 'Oui, revenir au Tour 1',
-                            cancelText: 'Annuler'
-                          });
-                          if (!ok) return;
+                          if (!window.confirm('⚠️ Voulez-vous vraiment revenir au Tour 1 ?\nLes données du Tour 2 seront conservées mais le tour actif sera le Tour 1.')) return;
                           try {
                             await revenirPremierTour();
-                            uiService.toast('success', { title: 'Tour 1 actif', message: 'Retour au premier tour effectué.' });
                           } catch (e) {
-                            uiService.toast('error', { title: 'Erreur', message: 'Retour Tour 1 échoué : ' + (e?.message || e) });
+                            alert('Erreur retour Tour 1 : ' + (e?.message || e));
                           }
                         }}
                       >
@@ -373,18 +366,11 @@ export default function App() {
                         className="btn btn-danger"
                         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', fontSize: '1em', fontWeight: 600 }}
                         onClick={async () => {
-                          const ok = await uiService.confirm({
-                            title: '⚠️ Passage au Tour 2',
-                            message: 'Voulez-vous vraiment passer au Tour 2 ?\n\nCette action changera le tour actif de l\'élection.',
-                            confirmText: 'Oui, passer au Tour 2',
-                            cancelText: 'Annuler'
-                          });
-                          if (!ok) return;
+                          if (!window.confirm('⚠️ Voulez-vous vraiment passer au Tour 2 ?\nCette action changera le tour actif de l\'élection.')) return;
                           try {
                             await passerSecondTour();
-                            uiService.toast('success', { title: 'Tour 2 actif', message: 'Passage au second tour effectué.' });
                           } catch (e) {
-                            uiService.toast('error', { title: 'Erreur', message: 'Passage Tour 2 échoué : ' + (e?.message || e) });
+                            alert('Erreur passage Tour 2 : ' + (e?.message || e));
                           }
                         }}
                       >

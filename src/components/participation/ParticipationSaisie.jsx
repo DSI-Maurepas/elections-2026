@@ -1,253 +1,250 @@
-import React, { useState, useEffect } from 'react';
-import { useGoogleSheets } from '../../hooks/useGoogleSheets';
+// src/components/participation/ParticipationSaisie.jsx
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import googleSheetsService from '../../services/googleSheetsService';
 import auditService from '../../services/auditService';
+import { getAuthState, isBV } from '../../services/authService';
 
-/**
- * Saisie de la participation par bureau
- * Votants cumulés de 09h à 20h (1ère publication à 09h)
- */
+const HOURS = [
+  { key: 'votants09h', label: '09h' },
+  { key: 'votants10h', label: '10h' },
+  { key: 'votants11h', label: '11h' },
+  { key: 'votants12h', label: '12h' },
+  { key: 'votants13h', label: '13h' },
+  { key: 'votants14h', label: '14h' },
+  { key: 'votants15h', label: '15h' },
+  { key: 'votants16h', label: '16h' },
+  { key: 'votants17h', label: '17h' },
+  { key: 'votants18h', label: '18h' },
+  { key: 'votants19h', label: '19h' },
+  { key: 'votants20h', label: '20h' },
+];
+
+// Normalise Bureau ID for robust matching between auth codes (e.g. "1") and Sheets values (e.g. "BV1", "BV 1")
+const normalizeBureauId = (value) => {
+  if (value === null || value === undefined) return '';
+  const s = String(value).trim().toUpperCase();
+  const m = s.match(/(\d+)/);
+  return m ? m[1] : s;
+};
+
 const ParticipationSaisie = ({ electionState, reloadElectionState }) => {
-  const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
-  const { 
-    data: participation, 
-    load: loadParticipation,
-    create,
-    update 
-  } = useGoogleSheets(electionState.tourActuel === 1 ? 'Participation_T1' : 'Participation_T2');
+  const auth = useMemo(() => getAuthState(), []);
+  const forcedBureauId = isBV(auth) ? String(auth.bureauId) : null;
 
-  const [selectedBureau, setSelectedBureau] = useState('');
-  const [inscrits, setInscrits] = useState(0);
-  const [votants, setVotants] = useState({
-    '09h': 0,
-    '10h': 0,
-    '11h': 0,
-    '12h': 0,
-    '13h': 0,
-    '14h': 0,
-    '15h': 0,
-    '16h': 0,
-    '17h': 0,
-    '18h': 0,
-    '19h': 0,
-    '20h': 0
-  });
+  const tourActuel = electionState?.tourActuel || 1;
+  const participationSheet = tourActuel === 2 ? 'Participation_T2' : 'Participation_T1';
+
+  const [bureaux, setBureaux] = useState([]);
+  const [selectedBureauId, setSelectedBureauId] = useState(forcedBureauId || '');
+  const [row, setRow] = useState(null); // ligne participation (objet) avec rowIndex
+  const [inputs, setInputs] = useState({}); // buffer de saisie (string) pour éviter validations pendant frappe
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
+  const [savingKey, setSavingKey] = useState(null);
+
+  const loadBureaux = useCallback(async () => {
+    const list = await googleSheetsService.getData('Bureaux');
+    setBureaux(Array.isArray(list) ? list : []);
+  }, []);
+
+  const loadParticipationRow = useCallback(
+    async (bureauId) => {
+      if (!bureauId) {
+        setRow(null);
+        setInputs({});
+        return;
+      }
+      setLoading(true);
+      try {
+        const rows = await googleSheetsService.getData(participationSheet);
+
+        // Robust match: "1" == "BV1" == "BV 1"
+        const current = (Array.isArray(rows) ? rows : []).find(
+          (r) => normalizeBureauId(r?.bureauId ?? '') === normalizeBureauId(bureauId)
+        );
+
+        setRow(current || null);
+
+        // init buffer inputs
+        const next = {};
+        HOURS.forEach((h) => {
+          const v = current ? current[h.key] ?? 0 : 0;
+          next[h.key] = v === null || v === undefined ? '' : String(v);
+        });
+        setInputs(next);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [participationSheet]
+  );
 
   useEffect(() => {
     loadBureaux();
-    loadParticipation();
-  }, [loadBureaux, loadParticipation]);
+  }, [loadBureaux]);
 
+  // BV : bureau imposé
   useEffect(() => {
-    if (selectedBureau && bureaux.length > 0) {
-      const bureau = bureaux.find(b => b.id === selectedBureau);
-      if (bureau) {
-        setInscrits(bureau.inscrits || 0);
-        
-        // Charger la participation existante
-        const existingData = participation.find(p => p.bureauId === selectedBureau);
-        if (existingData) {
-          setVotants({
-            '09h': existingData.votants09h || 0,
-            '10h': existingData.votants10h || 0,
-            '11h': existingData.votants11h || 0,
-            '12h': existingData.votants12h || 0,
-            '13h': existingData.votants13h || 0,
-            '14h': existingData.votants14h || 0,
-            '15h': existingData.votants15h || 0,
-            '16h': existingData.votants16h || 0,
-            '17h': existingData.votants17h || 0,
-            '18h': existingData.votants18h || 0,
-            '19h': existingData.votants19h || 0,
-            '20h': existingData.votants20h || 0
-          });
-        }
-      }
-    }
-  }, [selectedBureau, bureaux, participation]);
+    if (forcedBureauId) setSelectedBureauId(forcedBureauId);
+  }, [forcedBureauId]);
 
-  const handleVotantsChange = (heure, value) => {
-    const numValue = parseInt(value) || 0;
-    
-    // Validation : ne peut pas dépasser les inscrits
-    if (numValue > inscrits) {
-      setMessage({
-        type: 'error',
-        text: `Le nombre de votants ne peut pas dépasser ${inscrits} inscrits`
-      });
-      return;
-    }
+  // Recharger la ligne participation quand bureau/tour change
+  useEffect(() => {
+    loadParticipationRow(selectedBureauId);
+  }, [selectedBureauId, loadParticipationRow]);
 
-    // Validation : doit être cumulatif (croissant)
-    const heures = ['09h','10h','11h','12h','13h','14h','15h','16h','17h','18h','19h','20h'];
-    const currentIndex = heures.indexOf(heure);
-    
-    if (currentIndex > 0) {
-      const prevHeure = heures[currentIndex - 1];
-      if (numValue < votants[prevHeure]) {
-        setMessage({
-          type: 'error',
-          text: 'Les votants doivent être cumulatifs (croissants)'
-        });
-        return;
-      }
-    }
+  const bureauOptions = useMemo(() => {
+    // Le service filtre déjà côté BV (et on a corrigé getData pour retourner filtered)
+    return bureaux
+      .filter((b) => b?.actif !== false)
+      .map((b) => ({
+        id: String(b.id ?? '').trim(),
+        label: `BV ${String(b.id ?? '').trim()} — ${b.nom}${b.inscrits ? ` (${b.inscrits} inscrits)` : ''}`,
+      }));
+  }, [bureaux]);
 
-    setVotants(prev => ({
-      ...prev,
-      [heure]: numValue
-    }));
-    setMessage(null);
+  const handleChange = (key, value) => {
+    // Buffer : pas de validation bloquante pendant la frappe
+    setInputs((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!selectedBureau) {
-      setMessage({ type: 'error', text: 'Veuillez sélectionner un bureau' });
-      return;
+  const handleBlur = async (key) => {
+    if (!row || !selectedBureauId) return;
+
+    const raw = inputs[key];
+    // autoriser vide (ne pas écraser par 0 si l'utilisateur efface puis sort)
+    if (raw === '') return;
+
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n) || n < 0) return;
+
+    // Pas de validation cumulative sur onChange : on enregistre ici (onBlur)
+    const updated = { ...row, [key]: n };
+
+    // Timestamp si colonne présente
+    if (Object.prototype.hasOwnProperty.call(row, 'timestamp')) {
+      updated.timestamp = new Date().toISOString();
     }
 
     try {
-      setLoading(true);
-      setMessage(null);
+      setSavingKey(key);
+      await googleSheetsService.updateRow(participationSheet, row.rowIndex, updated);
 
-      const data = {
-        bureauId: selectedBureau,
-        tour: electionState.tourActuel,
-        inscrits: inscrits,        votants09h: votants['09h'],
-        votants10h: votants['10h'],
-        votants11h: votants['11h'],
-        votants12h: votants['12h'],
-        votants13h: votants['13h'],
-        votants14h: votants['14h'],
-        votants15h: votants['15h'],
-        votants16h: votants['16h'],
-        votants17h: votants['17h'],
-        votants18h: votants['18h'],
-        votants19h: votants['19h'],
-        votants20h: votants['20h'],
-        timestamp: new Date().toISOString()
-      };
+      // Notify other components (Consolidation/Stats) to refresh without full page reload
+      try {
+        window.dispatchEvent(new CustomEvent('sheets:changed', { detail: { sheetName: participationSheet } }));
+      } catch (_) {}
 
-      // Vérifier si existe déjà
-      const existingData = participation.find(p => p.bureauId === selectedBureau);
-      
-      if (existingData) {
-        await update(existingData.rowIndex, data);
-        await auditService.log('UPDATE_PARTICIPATION', {
-          bureau: selectedBureau,
-          tour: electionState.tourActuel
-        });
-      } else {
-        await create(data);
-        await auditService.log('CREATE_PARTICIPATION', {
-          bureau: selectedBureau,
-          tour: electionState.tourActuel
-        });
-      }
-
-      setMessage({
-        type: 'success',
-        text: 'Participation enregistrée avec succès'
+      auditService?.log?.('PARTICIPATION_UPDATE', {
+        sheet: participationSheet,
+        bureauId: selectedBureauId,
+        field: key,
+        value: n,
       });
 
-      await loadParticipation();
-
-      // Notifie les autres vues (consolidation / stats) qu'une écriture vient d'avoir lieu
-      window.dispatchEvent(new CustomEvent('sheets:changed', {
-        detail: {
-          sheetName: (electionState.tourActuel === 1 ? 'Participation_T1' : 'Participation_T2'),
-          bureauId: selectedBureau,
-          ts: Date.now()
-        }
-      }));
-
-    } catch (error) {
-      console.error('Erreur enregistrement:', error);
-      setMessage({
-        type: 'error',
-        text: `Erreur : ${error.message}`
-      });
+      // reload state global éventuel (dashboard / badges)
+      try {
+        await reloadElectionState?.();
+      } catch (_) {}
+      // reload row (source de vérité sheets)
+      await loadParticipationRow(selectedBureauId);
     } finally {
-      setLoading(false);
+      setSavingKey(null);
     }
   };
 
   return (
     <div className="participation-saisie">
-      <h2>📋 Saisie de la participation <br /> Tour {electionState.tourActuel}</h2>
+      <h3>🗳️ Participation — Saisie par bureau</h3>
 
-      <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label>Bureau de vote :</label>
-          <select
-            className="bureau-select"
-            value={selectedBureau}
-            onChange={(e) => setSelectedBureau(e.target.value)}
-            required
-          >
+      <div className="form-group">
+        <label>Bureau de vote :</label>
+        {forcedBureauId ? (
+          <div className="bureau-select bureau-select--locked">BV {forcedBureauId}</div>
+        ) : (
+          <select className="bureau-select" value={selectedBureauId} onChange={(e) => setSelectedBureauId(e.target.value)}>
             <option value="">-- Sélectionner un bureau --</option>
-            {bureaux.map(bureau => {
-              const rawId = String(bureau.id ?? '').trim();
-              const bvLabel = rawId.toUpperCase().startsWith('BV')
-                ? rawId.replace(/^BV\s*/i, 'BV ')
-                : `BV ${rawId}`;
-              return (
-                <option key={bureau.id} value={bureau.id}>
-                  {bvLabel} — {bureau.nom} ({bureau.inscrits} inscrits)
-                </option>
-              );
-            })}
+            {bureauOptions.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
           </select>
-        </div>
-
-        {selectedBureau && (
-          <>
-            <div className="inscrits-info">
-              <strong>Inscrits :</strong> {inscrits.toLocaleString('fr-FR')}
-            </div>
-
-            <div className="votants-grid">
-              <h3>Votants cumulés par heure :</h3>
-              
-              {['09h','10h','11h','12h','13h','14h','15h','16h','17h','18h','19h','20h'].map(heure => (
-                <div key={heure} className="votants-row">
-                  <label>{heure} :</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max={inscrits}
-                    value={votants[heure]}
-                    onChange={(e) => setVotants(prev => ({ ...prev, [heure]: e.target.value }))}
-                    onBlur={(e) => handleVotantsChange(heure, e.target.value)}
-                  />
-                  <span className="percentage">
-                    {inscrits > 0 ? ((votants[heure] / inscrits) * 100).toFixed(2) : 0}%
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {message && (
-              <div className={`message ${message.type}`}>
-                {message.text}
-              </div>
-            )}
-
-            <div className="form-actions">
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={loading}
-              >
-                {loading ? 'Enregistrement...' : '💾 Enregistrer'}
-              </button>
-            </div>
-          </>
         )}
-      </form>
+      </div>
+
+      {!selectedBureauId ? (
+        <div className="info-message">Sélectionnez un bureau de vote pour saisir la participation.</div>
+      ) : loading ? (
+        <div className="info-message">Chargement…</div>
+      ) : !row ? (
+        <div className="warning-message">
+          Aucune ligne trouvée dans <b>{participationSheet}</b> pour le bureau <b>{selectedBureauId}</b>. (Vérifie que la
+          feuille contient bien une ligne par bureau avec la colonne BureauID.)
+        </div>
+      ) : (
+        <div className="participation-grid">
+
+          <style>{`
+            /* Presentation only - no impact on behaviour */
+            .participation-grid table tbody tr { height: 44px; }
+            .participation-grid .hour-cell { width: 70px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+            .participation-grid .participation-input {
+              width: 100%;
+              max-width: 260px;
+              height: 32px;
+              padding: 6px 10px;
+              border-radius: 10px;
+              border: 1px solid var(--color-gray-300);
+              font-size: var(--font-size-base);
+              line-height: 1;
+              margin: 0;
+            }
+            .participation-grid .participation-input:focus {
+              outline: none;
+              border-color: var(--color-primary);
+              box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+            }
+            .participation-grid .hint {
+              margin-top: 10px;
+              font-size: var(--font-size-sm);
+              line-height: 1.4;
+              color: var(--color-gray-700);
+              max-width: 520px;
+              white-space: normal;
+            }
+          `}</style>
+
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Heure</th>
+                <th>Votants cumulés</th>
+              </tr>
+            </thead>
+            <tbody>
+              {HOURS.map((h) => (
+                <tr key={h.key}>
+                  <td className="hour-cell">{h.label}</td>
+                  <td>
+                    <input className="participation-input"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="\d*"
+                      value={inputs[h.key] ?? ''}
+                      onChange={(e) => handleChange(h.key, e.target.value)}
+                      onBlur={() => handleBlur(h.key)}
+                      disabled={savingKey === h.key}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="hint">
+            Saisie <b>cumulative</b> par heure (validation uniquement au <b>changement de champ</b>).
+          </div>
+        </div>
+      )}
     </div>
   );
 };

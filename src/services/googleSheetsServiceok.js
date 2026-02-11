@@ -366,7 +366,7 @@ async sleep(ms) {
       case 'Resultats_T1':
       case 'Resultats_T2':
         // Colonnes attendues (Google Sheets):
-        // A BureauID | B Inscrits | C Votants | D Blancs | E Nuls | F Exprimes | G..L L1_Voix..L6_Voix | M SaisiPar | N ValidePar | O Timestamp
+        // A BureauID | B Inscrits | C Votants | D Blancs | E Nuls | F Exprimes | G..K L1_Voix..L5_Voix | L SaisiPar | M ValidePar | N Timestamp
         return rows.map(row => {
           const voix = {
             L1: parseInt(row[6]) || 0,
@@ -374,7 +374,6 @@ async sleep(ms) {
             L3: parseInt(row[8]) || 0,
             L4: parseInt(row[9]) || 0,
             L5: parseInt(row[10]) || 0,
-            L6: parseInt(row[11]) || 0,
           };
 
           return {
@@ -385,9 +384,9 @@ async sleep(ms) {
             nuls: parseInt(row[4]) || 0,
             exprimes: parseInt(row[5]) || 0,
             voix,
-            saisiPar: row[12] || '',
-            validePar: row[13] || '',
-            timestamp: row[14] || ''
+            saisiPar: row[11] || '',
+            validePar: row[12] || '',
+            timestamp: row[13] || ''
           };
         });
 
@@ -435,7 +434,7 @@ default:
 
   async getData(sheetName, filters = {}) {
     const normalizedSheet = this.normalizeSheetName(sheetName);
-    const range = filters?.range || 'A:Z';
+    const range = filters?.range || (String(normalizedSheet).startsWith('Seats_') ? 'A:ZZ' : 'A:Z');
     const a1 = this.a1(normalizedSheet, range);
     const { role, bureauId } = this._getAccessContext();
     const accessKey = role === 'BV' ? `BV:${bureauId}` : (role || 'NONE');
@@ -478,13 +477,12 @@ this._setCached(key, filtered);
       case 'Resultats_T1':
       case 'Resultats_T2': {
         const voix = obj.voix || {};
-        // Supporte soit des clés "L1..L6", soit des ids candidats (ex: 'L1') identiques
+        // Supporte soit des clés "L1..L5", soit des ids candidats (ex: 'L1') identiques
         const l1 = parseInt(voix.L1 ?? voix['L1'] ?? obj.L1_Voix ?? obj.L1 ?? 0) || 0;
         const l2 = parseInt(voix.L2 ?? voix['L2'] ?? obj.L2_Voix ?? obj.L2 ?? 0) || 0;
         const l3 = parseInt(voix.L3 ?? voix['L3'] ?? obj.L3_Voix ?? obj.L3 ?? 0) || 0;
         const l4 = parseInt(voix.L4 ?? voix['L4'] ?? obj.L4_Voix ?? obj.L4 ?? 0) || 0;
         const l5 = parseInt(voix.L5 ?? voix['L5'] ?? obj.L5_Voix ?? obj.L5 ?? 0) || 0;
-        const l6 = parseInt(voix.L6 ?? voix['L6'] ?? obj.L6_Voix ?? obj.L6 ?? 0) || 0;
 
         return [
           obj.bureauId ?? '',                 // A BureauID
@@ -498,10 +496,9 @@ this._setCached(key, filtered);
           l3,                                  // I L3_Voix
           l4,                                  // J L4_Voix
           l5,                                  // K L5_Voix
-          l6,                                  // L L6_Voix
-          obj.saisiPar ?? '',                  // M SaisiPar
-          obj.validePar ?? '',                 // N ValidePar
-          obj.timestamp ?? ''                  // O Timestamp
+          obj.saisiPar ?? '',                  // L SaisiPar
+          obj.validePar ?? '',                 // M ValidePar
+          obj.timestamp ?? ''                  // N Timestamp
         ];
       }
       case 'Participation_T1':

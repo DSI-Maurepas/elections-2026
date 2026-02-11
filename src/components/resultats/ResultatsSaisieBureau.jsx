@@ -1,763 +1,439 @@
-import React, { useState, useEffect } from 'react';
-import { useGoogleSheets } from '../../hooks/useGoogleSheets';
-import { validateResultats } from '../../utils/validators';
+// src/components/resultats/ResultatsSaisieBureau.jsx
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import googleSheetsService from '../../services/googleSheetsService';
 import auditService from '../../services/auditService';
+import { getAuthState, isBV } from '../../services/authService';
+import { useElectionState } from '../../hooks/useElectionState';
+import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 
-const ResultatsSaisieBureau = ({ electionState}) => {
-  const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
-  const { data: candidats, load: loadCandidats } = useGoogleSheets('Candidats');
-  const { 
-    data: resultats, 
-    load: loadResultats,
-    create,
-    update 
-  } = useGoogleSheets(electionState.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2');
+/**
+ * Normalise les bureauId pour un matching robuste
+ */
+const normalizeBureauId = (value) => {
+  if (value === null || value === undefined) return '';
+  const s = String(value).trim().toUpperCase();
+  const m = s.match(/(\d+)/);
+  return m ? m[1] : s;
+};
 
-  const [selectedBureau, setSelectedBureau] = useState('');
-  const [simpleMode, setSimpleMode] = useState(false);
-  const [formData, setFormData] = useState({
-    votants: 0,
-    blancs: 0,
-    nuls: 0,
-    exprimes: 0,
-    voix: {}
+export default function ResultatsSaisieBureau() {
+  const auth = useMemo(() => getAuthState(), []);
+  const forcedBureauId = isBV(auth) ? String(auth.bureauId) : null;
+
+  const { state: electionState } = useElectionState();
+  const tourActuel = electionState?.tourActuel === 2 ? 2 : 1;
+  const resultatsSheet = tourActuel === 2 ? 'Resultats_T2' : 'Resultats_T1';
+
+  const { data: bureaux } = useGoogleSheets('Bureaux');
+  const { data: candidats } = useGoogleSheets('Candidats');
+  const { data: resultats, load: reloadResultats, loading: loadingResultats } = useGoogleSheets(resultatsSheet);
+
+  const [selectedBureauId, setSelectedBureauId] = useState(forcedBureauId || '');
+  const [row, setRow] = useState(null);
+
+  const [inputsMain, setInputsMain] = useState({
+    inscrits: '',
+    votants: '',
+    blancs: '',
+    nuls: '',
+    exprimes: '',
   });
-  const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
+
+  const [inputsVoix, setInputsVoix] = useState({});
 
   useEffect(() => {
-    loadBureaux();
-    loadCandidats();
-    loadResultats();
-  }, [loadBureaux, loadCandidats, loadResultats]);
+    if (forcedBureauId) setSelectedBureauId(forcedBureauId);
+  }, [forcedBureauId]);
+
+  const bureauOptions = useMemo(() => {
+    const list = Array.isArray(bureaux) ? bureaux : [];
+    return list
+      .filter((b) => b && (b.actif === true || b.actif === 'TRUE' || b.actif === 1))
+      .map((b) => ({ id: String(b.id ?? ''), nom: String(b.nom ?? b.id ?? '') }));
+  }, [bureaux]);
+
+  const candidatsActifs = useMemo(() => {
+    const list = Array.isArray(candidats) ? candidats : [];
+    const filtered = list.filter((c) => (tourActuel === 1 ? !!c.actifT1 : !!c.actifT2));
+    filtered.sort((a, b) => (Number(a.ordre) || 0) - (Number(b.ordre) || 0));
+    return filtered;
+  }, [candidats, tourActuel]);
+
+  const findRowForBureau = useCallback((bureauId) => {
+    const list = Array.isArray(resultats) ? resultats : [];
+    const normalized = normalizeBureauId(bureauId);
+    return list.find((r) => normalizeBureauId(r?.bureauId ?? '') === normalized) || null;
+  }, [resultats]);
+
+  const getInscritsForBureau = useCallback((bureauId) => {
+    const list = Array.isArray(bureaux) ? bureaux : [];
+    const normalized = normalizeBureauId(bureauId);
+    const bureau = list.find((b) => normalizeBureauId(b?.id ?? '') === normalized);
+    return bureau ? Number(bureau.inscrits) || 0 : 0;
+  }, [bureaux]);
 
   useEffect(() => {
-    const initialVoix = {};
-    candidats.forEach(c => {
-      initialVoix[c.id] = 0;
-    });
-
-    if (selectedBureau) {
-      const existing = resultats.find(r => r.bureauId === selectedBureau);
-      if (existing) {
-        setFormData({
-          votants: existing.votants || 0,
-          blancs: existing.blancs || 0,
-          nuls: existing.nuls || 0,
-          exprimes: existing.exprimes || 0,
-          voix: existing.voix || initialVoix
-        });
-      } else {
-        setFormData({
-          votants: 0,
-          blancs: 0,
-          nuls: 0,
-          exprimes: 0,
-          voix: initialVoix
-        });
-      }
-    }
-  }, [selectedBureau, candidats, resultats]);
-
-  useEffect(() => {
-    const sommeVoix = Object.values(formData.voix).reduce((sum, v) => sum + (parseInt(v) || 0), 0);
-    if (sommeVoix !== formData.exprimes) {
-      setFormData(prev => ({
-        ...prev,
-        exprimes: sommeVoix
-      }));
-    }
-  }, [formData.voix]);
-
-  
-  const getNomListeBySlot = (slot) => {
-    if (!Array.isArray(candidats)) return null;
-    const tour = electionState?.tourActuel ?? 1;
-    const c = candidats.find((cand) =>
-      cand?.listeId === slot &&
-      ((tour === 1 && cand?.actifT1) || (tour === 2 && cand?.actifT2))
-    );
-    return c?.nomListe || null;
-  };
-
-const handleFieldChange = (field, value) => {
-    const numValue = parseInt(value) || 0;
-    setFormData(prev => ({
-      ...prev,
-      [field]: numValue
-    }));
-    setErrors({});
-    setMessage(null);
-  };
-
-  const handleVoixChange = (candidatId, value) => {
-    const numValue = parseInt(value) || 0;
-    setFormData(prev => ({
-      ...prev,
-      voix: {
-        ...prev.voix,
-        [candidatId]: numValue
-      }
-    }));
-    setErrors({});
-    setMessage(null);
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!selectedBureau) {
-      setMessage({ type: 'error', text: "Veuillez selectionner un bureau" });
+    if (!selectedBureauId) {
+      setRow(null);
+      setInputsMain({ inscrits: '', votants: '', blancs: '', nuls: '', exprimes: '' });
+      setInputsVoix({});
       return;
     }
 
-    const validation = validateResultats(formData);
-    if (!validation.valid) {
-      setErrors(validation.errors);
-      setMessage({
-        type: 'error',
-        text: "Veuillez corriger les erreurs avant d'enregistrer"
-      });
-      return;
+    const current = findRowForBureau(selectedBureauId);
+    setRow(current);
+
+    const inscritsFromBureaux = getInscritsForBureau(selectedBureauId);
+
+    const nextMain = {
+      inscrits: String(inscritsFromBureaux || ''),
+      votants: current ? String(current.votants ?? '') : '',
+      blancs: current ? String(current.blancs ?? '') : '',
+      nuls: current ? String(current.nuls ?? '') : '',
+      exprimes: current ? String(current.exprimes ?? '') : '',
+    };
+    setInputsMain(nextMain);
+
+    const nextVoix = {};
+    for (const c of candidatsActifs) {
+      const key = String(c?.listeId ?? '').trim();
+      if (!key) continue;
+      const v = current?.voix?.[key];
+      nextVoix[key] = (v === null || v === undefined) ? '' : String(v);
+    }
+    setInputsVoix(nextVoix);
+  }, [selectedBureauId, tourActuel, candidatsActifs, findRowForBureau, getInscritsForBureau]);
+
+  const coerceInt = (v) => {
+    const s = String(v ?? '').trim();
+    if (s === '') return 0;
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const buildRowData = useCallback(() => {
+    const voix = {};
+    for (const c of candidatsActifs) {
+      const key = String(c?.listeId ?? '').trim();
+      if (!key) continue;
+      voix[key] = coerceInt(inputsVoix[key]);
+    }
+
+    const votants = coerceInt(inputsMain.votants);
+    const blancs = coerceInt(inputsMain.blancs);
+    const nuls = coerceInt(inputsMain.nuls);
+    const exprimes = Math.max(0, votants - blancs - nuls);
+
+    return {
+      bureauId: selectedBureauId,
+      inscrits: coerceInt(inputsMain.inscrits),
+      votants: votants,
+      blancs: blancs,
+      nuls: nuls,
+      exprimes: exprimes,
+      voix,
+      saisiPar: row?.saisiPar ?? '',
+      validePar: row?.validePar ?? '',
+      timestamp: row?.timestamp ?? '',
+    };
+  }, [candidatsActifs, inputsMain, inputsVoix, row, selectedBureauId]);
+
+  const saveCurrentRow = useCallback(async (fieldLabelForAudit) => {
+    if (!selectedBureauId) return;
+
+    const rowData = buildRowData();
+
+    if (row && (row.rowIndex !== undefined && row.rowIndex !== null)) {
+      await googleSheetsService.updateRow(resultatsSheet, row.rowIndex, rowData);
+    } else {
+      await googleSheetsService.appendRow(resultatsSheet, rowData);
     }
 
     try {
-      setLoading(true);
-      setMessage(null);
-      const selectedBureauObj = (bureaux || []).find(b => b.id === selectedBureau);
-
-      const data = {
-        bureauId: selectedBureau,
-        tour: electionState.tourActuel,
-        inscrits: selectedBureauObj?.inscrits ?? 0,
-        votants: formData.votants,
-        blancs: formData.blancs,
-        nuls: formData.nuls,
-        exprimes: formData.exprimes,
-        voix: formData.voix,
-        timestamp: new Date().toISOString()
-      };
-
-      const existing = resultats.find(r => r.bureauId === selectedBureau);
-
-      if (existing) {
-        await update(existing.rowIndex, data);
-        await auditService.log('UPDATE_RESULTATS', {
-          bureau: selectedBureau,
-          tour: electionState.tourActuel
-        });
-      } else {
-        await create(data);
-        await auditService.log('CREATE_RESULTATS', {
-          bureau: selectedBureau,
-          tour: electionState.tourActuel
-        });
-      }
-
-      setMessage({
-        type: 'success',
-        text: "Resultats enregistres avec succes"
+      await auditService.logAction?.('RESULTATS_SAISIE', {
+        tour: tourActuel,
+        bureauId: selectedBureauId,
+        champ: fieldLabelForAudit || 'SAVE',
       });
+    } catch (_) {}
 
-      await loadResultats();
+    await reloadResultats();
 
-    } catch (error) {
-      console.error('Erreur enregistrement:', error);
-      setMessage({
-        type: 'error',
-        text: `Erreur : ${error.message}`
-      });
-    } finally {
-      setLoading(false);
+    const refreshed = findRowForBureau(selectedBureauId);
+    setRow(refreshed);
+  }, [buildRowData, findRowForBureau, reloadResultats, resultatsSheet, row, selectedBureauId, tourActuel]);
+
+  const onBlurMain = async (field) => {
+    try {
+      await saveCurrentRow(field);
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  
-  // --- Candidats (affichage + mapping L1..L5) ---
-  const getCandidateSlot = (candidat, index) => {
-    const raw =
-      (candidat && (candidat.id ?? candidat.ID ?? candidat.Id ?? candidat.code ?? candidat.key ?? candidat.listeId ?? candidat.liste ?? candidat.numero)) ?? null;
-    const s = raw != null ? String(raw).trim() : '';
-    if (/^L\d+$/i.test(s)) return s.toUpperCase();
-    return `L${index + 1}`;
+  const onBlurVoix = async (listeId) => {
+    try {
+      await saveCurrentRow(`voix_${listeId}`);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const getCandidateName = (candidat, index) => {
-    const name =
-      (candidat && (candidat.nom ?? candidat.Nom ?? candidat.name ?? candidat.Name ?? candidat.libelle ?? candidat.Libelle)) ?? '';
-    const s = name != null ? String(name).trim() : '';
-    return s || `Candidat ${index + 1}`;
-  };
+  const loading = loadingResultats;
 
-  const buildDisplayedCandidates = () => {
-    // Afficher uniquement les listes/candidats actifs pour le tour courant
-    // => Le bloc "Voix par candidat" s'adapte automatiquement (2 candidats => 2 lignes, etc.)
-    const tour = electionState?.tourActuel ?? 1;
-    const isActiveForTour = (cand) => {
-      if (!cand || typeof cand !== 'object') return false;
-      // Si les flags actifT1/actifT2 ne sont pas fournis, on considère l'entrée comme active
-      if (tour === 1) return (cand.actifT1 === undefined ? true : !!cand.actifT1);
-      return (cand.actifT2 === undefined ? true : !!cand.actifT2);
-    };
-
-    const base = Array.isArray(candidats) ? candidats.filter(isActiveForTour) : [];
-
-    // Tri naturel par slot (L1, L2, L10, ...)
-    const slotOrder = (cand, index) => {
-      const slot = getCandidateSlot(cand, index);
-      const m = /^L(\d+)$/i.exec(String(slot || '').trim());
-      return m ? parseInt(m[1], 10) : 9999;
-    };
-
-    return base
-      .map((c, i) => ({ candidat: c, index: i }))
-      .sort((a, b) => slotOrder(a.candidat, a.index) - slotOrder(b.candidat, b.index))
-      .map(x => x.candidat);
-  };
-
-const bureauData = bureaux.find(b => b.id === selectedBureau);
-
-  const sumVoixCandidats = Object.values(formData.voix || {}).reduce((acc, v) => acc + (Number(v) || 0), 0);
-  const exprimesValue = Number(formData.exprimes) || 0;
-  const controleVoixStatus = (exprimesValue === 0 && sumVoixCandidats === 0)
-    ? 'neutral'
-    : (sumVoixCandidats === exprimesValue ? 'valid' : 'invalid');
-
-  const isControlBulletinsOk = (Number(formData.votants) || 0) === ((Number(formData.blancs) || 0) + (Number(formData.nuls) || 0) + (Number(formData.exprimes) || 0));
-  const isControlVoixOk = (controleVoixStatus === 'valid');
-  const isControlsOk = isControlBulletinsOk && isControlVoixOk;
+  const exprimesSafe = useMemo(() => {
+    const v = coerceInt(inputsMain.votants);
+    const b = coerceInt(inputsMain.blancs);
+    const n = coerceInt(inputsMain.nuls);
+    return Math.max(0, v - b - n);
+  }, [inputsMain]);
 
   return (
-    <div className="resultats-saisie">
+    <div style={{ marginTop: 20 }}>
       <style>{`
-        /* ===== ResultatsSaisieBureau — layout dashboard (scopé) ===== */
-        .resultats-saisie .rs-title{
-          margin-bottom: 14px;
-        }
-        .resultats-saisie .rs-layout{
+        /* Responsive pour la grille des champs */
+        .resultats-saisie-grid {
           display: grid;
-          grid-template-columns: 1fr;
-          gap: 14px;
-          margin-top: 12px;
-        }
-        .resultats-saisie .rs-row{
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 14px;
-          align-items: stretch;
-        }
-        @media (min-width: 980px){
-          .resultats-saisie .rs-row.rs-row--top{
-            grid-template-columns: 1.05fr 1.35fr 1.10fr; /* Bureau | Décompte | Exprimés */
-            align-items: stretch;
-          }
-          .resultats-saisie .rs-row.rs-row--bottom{
-            grid-template-columns: 1.55fr 1fr; /* Voix | Contrôles */
-            align-items: stretch;
-          }
-        }
-
-        .resultats-saisie .rs-card{
-          border-radius: 18px;
-          border: 1px solid rgba(15, 23, 42, 0.12);
-          box-shadow: 0 14px 28px rgba(2, 6, 23, 0.08);
-          background: rgba(255,255,255,0.96);
-          padding: 14px 14px;
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-        }
-        .resultats-saisie .rs-card h3{
-          margin: 0 0 10px 0;
-        }
-        .resultats-saisie .rs-card .rs-fields,
-        .resultats-saisie .rs-card .rs-exprimes-line,
-        .resultats-saisie .rs-card .rs-voix-list,
-        .resultats-saisie .rs-card .control-panel{
-          flex: 1 1 auto;
-        }
-        .resultats-saisie .rs-card--bureau{
-          background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(255,255,255,0.96));
-          border: 2px solid rgba(59,130,246,0.28);
-        }
-        .resultats-saisie .rs-card--exprimes{
-          background: linear-gradient(135deg, rgba(245,158,11,0.16), rgba(255,255,255,0.96));
-          border: 2px solid rgba(245,158,11,0.35);
-        }
-        .resultats-saisie .rs-card--voix{
-          background: linear-gradient(135deg, rgba(16,185,129,0.10), rgba(255,255,255,0.96));
-          border: 2px solid rgba(16,185,129,0.22);
-        }
-
-        .resultats-saisie .rs-bureau-lines{
-          display: grid;
-          gap: 14px;
-          font-size: 1.05rem;
-          line-height: 1.5;
-        }
-        .resultats-saisie .rs-bureau-lines strong{
-          font-weight: 900;
-        }
-
-        .resultats-saisie .rs-fields{
-          display: grid;
+          grid-template-columns: repeat(5, minmax(120px, 1fr));
           gap: 10px;
+          margin: 10px 0 16px;
         }
-        .resultats-saisie .rs-field{
-          display: grid;
-          grid-template-columns: 220px 1fr;
-          gap: 10px;
-          align-items: center;
+
+        /* Mobile : réorganisation demandée
+           Ligne 1 : INSCRITS + EXPRIMÉS
+           Ligne 2 : VOTANTS + BLANCS + NULS
+        */
+        @media (max-width: 768px) {
+          .resultats-saisie-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-areas:
+              "inscrits exprimes exprimes"
+              "votants  blancs   nuls";
+          }
+
+          .resultats-field-inscrits { grid-area: inscrits; }
+          .resultats-field-exprimes { grid-area: exprimes; }
+          .resultats-field-votants { grid-area: votants; }
+          .resultats-field-blancs { grid-area: blancs; }
+          .resultats-field-nuls { grid-area: nuls; }
         }
-        .resultats-saisie .rs-field label{
-          margin: 0;
-          font-weight: 800;
+
+        /* Très petit écran : on conserve l’ordre logique, mais on évite l’écrasement */
+        @media (max-width: 480px) {
+          .resultats-saisie-grid {
+            /* Toujours 2 lignes : INSCRITS + EXPRIMÉS / VOTANTS + BLANCS + NULS */
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-areas:
+              "inscrits exprimes exprimes"
+              "votants  blancs   nuls";
+            gap: 8px;
+          }
         }
-        .resultats-saisie .rs-field .info{
-          margin-left: 10px;
-          opacity: 0.8;
-          font-weight: 700;
+
+        /* Tableau des voix : wrapper scroll horizontal + 1ère colonne sticky (Liste)
+           IMPORTANT : on n’impose aucune couleur, pour respecter le style existant (th bleu, arrondis, ombres, hover…)
+        */
+        .resultats-voix-scroll {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        /* En responsive, on force une largeur minimale pour activer le scroll horizontal */
+        @media (max-width: 768px) {
+          .resultats-voix-scroll table {
+            min-width: 640px;
+          }
+        }
+
+        .resultats-voix-scroll table th,
+        .resultats-voix-scroll table td {
           white-space: nowrap;
         }
-        @media (max-width: 640px){
-          .resultats-saisie .rs-field{
-            grid-template-columns: 1fr;
-          }
-          .resultats-saisie .rs-field .info{
-            margin-left: 0;
-            margin-top: 6px;
-            white-space: normal;
-          }
+
+        .resultats-voix-box {
+          border-radius: 12px;
+          box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+          overflow: hidden; /* garde les bords arrondis avec le scroll */
         }
 
-        .resultats-saisie .rs-exprimes-line{
-          display: grid;
-          gap: 10px;
-        }
-        .resultats-saisie .rs-exprimes-badge{
-          display: flex;
-          align-items: baseline;
-          justify-content: space-between;
-          gap: 10px;
-          padding: 10px 12px;
-          border-radius: 14px;
-          background: rgba(255,255,255,0.90);
-          border: 1px solid rgba(15,23,42,0.12);
-          box-shadow: 0 10px 20px rgba(2,6,23,0.06);
-        }
-        .resultats-saisie .rs-exprimes-badge strong{
-          font-size: 1.35rem;
-          font-weight: 900;
-        }
-        .resultats-saisie .rs-exprimes-badge span{
-          font-weight: 800;
-          opacity: 0.8;
-          text-align: right;
-        }
-
-        /* Voix : rendu visuel */
-        /* ===== Mise en évidence SAISIE — Voix par candidat ===== */
-        .resultats-saisie .rs-card--voix{
-          border: 2px dashed rgba(16,185,129,0.55);
-          box-shadow: 0 18px 36px rgba(16,185,129,0.18);
-          background: linear-gradient(135deg, rgba(16,185,129,0.16), rgba(255,255,255,0.96));
-        }
-        .resultats-saisie .rs-card--voix h3{
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-        .resultats-saisie .rs-card--voix h3::after{
-          content: "✍️ À SAISIR";
-          font-size: 0.78rem;
-          font-weight: 900;
-          letter-spacing: 0.04em;
-          padding: 4px 8px;
-          border-radius: 999px;
-          background: rgba(16,185,129,0.18);
-          color: #065f46;
-          border: 1px solid rgba(16,185,129,0.45);
-        }
-        .resultats-saisie .rs-card--voix input[type="number"]{
-          border: 2px solid rgba(16,185,129,0.55);
-          background: #ffffff;
-          box-shadow: inset 0 0 0 1px rgba(16,185,129,0.15);
-        }
-        .resultats-saisie .rs-card--voix input[type="number"]:focus{
-          outline: none;
-          border-color: rgba(5,150,105,0.9);
-          box-shadow: 0 0 0 4px rgba(16,185,129,0.25);
-        }
-        @media (min-width: 980px){
-          .resultats-saisie .rs-card--voix{
-            animation: rsPulse 3.5s ease-in-out infinite;
-          }
-        }
-        @keyframes rsPulse{
-          0%{ box-shadow: 0 18px 36px rgba(16,185,129,0.18); }
-          50%{ box-shadow: 0 22px 44px rgba(16,185,129,0.28); }
-          100%{ box-shadow: 0 18px 36px rgba(16,185,129,0.18); }
-        }
-    
-        .resultats-saisie .rs-voix-list{
-          display: grid;
-          gap: 10px;
-        }
-        .resultats-saisie .rs-voix-item{
-          display: grid;
-          grid-template-columns: 1.2fr 0.8fr;
-          gap: 10px;
-          align-items: center;
-          padding: 10px 10px;
-          border-radius: 14px;
-          background: rgba(255,255,255,0.92);
-          border: 1px solid rgba(15,23,42,0.10);
-        }
-        @media (max-width: 720px){
-          .resultats-saisie .rs-voix-item{
-            grid-template-columns: 1fr;
-          }
-        }
-        .resultats-saisie .rs-voix-label{
-          font-weight: 900;
-        }
-        .resultats-saisie .rs-voix-barwrap{
-          position: relative;
-          height: 34px;
-          border-radius: 999px;
-          background: rgba(15,23,42,0.06);
+        /* Ajustement des largeurs (flexible mais pas "trop large") */
+        .resultats-voix-scroll table th:first-child,
+        .resultats-voix-scroll table td:first-child {
+          max-width: 220px;
+          min-width: 140px;
           overflow: hidden;
-          border: 1px solid rgba(15,23,42,0.10);
-        }
-        .resultats-saisie .rs-voix-bar{
-          position: absolute;
-          inset: 0 auto 0 0;
-          border-radius: 999px;
-          background: linear-gradient(90deg, rgba(59,130,246,0.95), rgba(16,185,129,0.95));
-          width: 0%;
-          min-width: 0%;
-          transition: width 520ms ease;
+          text-overflow: ellipsis;
         }
 
-        /* ===== Animations barres voix ===== */
-        .resultats-saisie .rs-voix-bar::after{
-          content: "";
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(90deg, rgba(255,255,255,0.00), rgba(255,255,255,0.20), rgba(255,255,255,0.00));
-          transform: translateX(-60%);
-          animation: rsShimmer 2.2s ease-in-out infinite;
-          opacity: 0.55;
-          pointer-events: none;
-        }
-        @keyframes rsShimmer{
-          0%{ transform: translateX(-60%); }
-          50%{ transform: translateX(60%); }
-          100%{ transform: translateX(140%); }
+        .resultats-voix-scroll table th:nth-child(2),
+        .resultats-voix-scroll table td:nth-child(2) {
+          min-width: 220px;
         }
 
-        /* ===== Verrouillage visuel contrôles KO ===== */
-        .resultats-saisie .rs-controls.is-ko{
-          border: 2px solid rgba(239, 68, 68, 0.55);
-          box-shadow: 0 18px 36px rgba(239, 68, 68, 0.14);
-          background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(255,255,255,0.96));
-        }
-        .resultats-saisie .rs-lock-banner{
-          margin-top: 10px;
-          padding: 10px 12px;
-          border-radius: 14px;
-          border: 1px solid rgba(239, 68, 68, 0.35);
-          background: rgba(239, 68, 68, 0.08);
-          font-weight: 900;
-          line-height: 1.25;
-        }
-        .resultats-saisie .form-actions.is-ko .btn-primary{
-          filter: grayscale(0.2);
-          box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.28), 0 16px 28px rgba(2,6,23,0.10);
+        .resultats-voix-scroll table th:nth-child(3),
+        .resultats-voix-scroll table td:nth-child(3) {
+          min-width: 90px;
         }
 
-        /* ===== Mode Président (ultra simplifié) ===== */
-        .resultats-saisie .rs-toolbar{
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          padding: 10px 12px;
-          border-radius: 16px;
-          border: 1px solid rgba(15, 23, 42, 0.12);
-          background: rgba(255,255,255,0.92);
-          box-shadow: 0 10px 18px rgba(2,6,23,0.06);
-          margin: 12px 0 8px;
-          flex-wrap: wrap;
-        }
-        .resultats-saisie .rs-toggle{
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
-          font-weight: 900;
-        }
-        .resultats-saisie .rs-toggle button{
-          border: 1px solid rgba(15, 23, 42, 0.18);
-          background: rgba(255,255,255,0.95);
-          border-radius: 999px;
-          padding: 7px 10px;
-          font-weight: 900;
-          cursor: pointer;
-          box-shadow: 0 10px 18px rgba(2,6,23,0.06);
-        }
-        .resultats-saisie .rs-toggle button.is-on{
-          border-color: rgba(59, 130, 246, 0.55);
-          background: rgba(59, 130, 246, 0.10);
-        }
-        .resultats-saisie .rs-simple-note{
-          font-weight: 800;
-          opacity: 0.8;
+        /* Colonne 1 sticky : header inchangé, corps avec fond blanc pour éviter la superposition */
+        .resultats-voix-scroll table th:first-child,
+        .resultats-voix-scroll table td:first-child {
+          position: sticky;
+          left: 0;
         }
 
-        .resultats-saisie .rs-voix-bartext{
-          position: relative;
+        .resultats-voix-scroll table thead th:first-child {
+          z-index: 4;
+        }
+
+        .resultats-voix-scroll table tbody td:first-child {
           z-index: 2;
-          height: 34px;
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-          padding: 0 10px;
-          font-weight: 900;
-          color: #0f172a;
-          text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+          background: #fff;
         }
 
-        /* Contrôles : compact et aligné */
-        .resultats-saisie .rs-controls .resultats-controls{
-          display: grid;
-          gap: 10px;
-        }
-        .resultats-saisie .control-check{
-          border-radius: 14px;
-          padding: 10px 12px;
-          line-height: 1.25;
-        }
       `}</style>
 
-      <h3 className="rs-title">🗳️ Saisie des resultats - Tour {electionState.tourActuel}</h3>
+      <h3>Résultats — Saisie bureau (Tour {tourActuel})</h3>
 
-      <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label>Bureau de vote :</label>
+      {!forcedBureauId && (
+        <div style={{ margin: '10px 0' }}>
+          <label style={{ marginRight: 8 }}>Bureau :</label>
           <select
-            value={selectedBureau}
-            onChange={(e) => setSelectedBureau(e.target.value)}
-            required
+            value={selectedBureauId}
+            onChange={(e) => setSelectedBureauId(String(e.target.value))}
           >
-            <option key="__placeholder" value="">-- Selectionner un bureau --</option>
-            {bureaux.map((bureau, index) => (
-              <option key={bureau.id ?? `bureau-${index}`} value={bureau.id}>
-                {bureau.id} — {bureau.nom}
+            <option value="">— Sélectionner —</option>
+            {bureauOptions.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.id} — {b.nom}
               </option>
             ))}
           </select>
         </div>
+      )}
 
-        {selectedBureau && (
-          <>
-            <div className="rs-toolbar">
-            <div className="rs-toggle">
-              <span>👨‍💼 Mode “Président du bureau”</span>
-              <button
-                type="button"
-                className={simpleMode ? 'is-on' : ''}
-                onClick={() => setSimpleMode((v) => !v)}
-                aria-pressed={simpleMode}
-                title="Affichage simplifié pour saisie rapide"
-              >
-                {simpleMode ? 'Activé' : 'Désactivé'}
-              </button>
-            </div>
-            <div className="rs-simple-note">
-              {simpleMode ? 'Saisie rapide : focus sur Décompte, Voix, Contrôles.' : 'Affichage complet.'}
-            </div>
-          </div>
-
-          <div className="rs-layout">
-            {/* LIGNE 1 : Bureau | Décompte | Exprimés */}
-            <div className="rs-row rs-row--top">
-              {/* Bloc bleu compact */}
-              {!simpleMode && (
-              <div className="rs-card rs-card--bureau">
-                <h3>🏢 Bureau</h3>
-                <div className="rs-bureau-lines">
-                  <div><strong>Bureau :</strong> {bureauData?.nom}</div>
-                  <div><strong>President :</strong> {bureauData?.president}</div>
-                  <div><strong>Secretaire :</strong> {bureauData?.secretaire}</div>
-                </div>
-              </div>
-              )}
-
-              {/* Décompte des bulletins */}
-              <div className="rs-card">
-                <h3>📦 Decompte des bulletins</h3>
-                <div className="rs-fields">
-                  <div className="rs-field">
-                    <label>Votants :</label>
-                    <div>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formData.votants}
-                        onChange={(e) => handleFieldChange('votants', e.target.value)}
-                        required
-                      />
-                      {errors.votants && <span className="error">{errors.votants}</span>}
-                    </div>
-                  </div>
-
-                  <div className="rs-field">
-                    <label>Bulletins blancs :</label>
-                    <div>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formData.blancs}
-                        onChange={(e) => handleFieldChange('blancs', e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="rs-field">
-                    <label>Bulletins nuls :</label>
-                    <div>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formData.nuls}
-                        onChange={(e) => handleFieldChange('nuls', e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Suffrages exprimés (calcul auto) */}
-              {!simpleMode && (
-              <div className="rs-card rs-card--exprimes">
-                <h3>🧮 Suffrages exprimés</h3>
-                <div className="rs-exprimes-line">
-                  <div className="rs-exprimes-badge">
-                    <div>
-                      <div style={{ fontWeight: 900, opacity: 0.85 }}>Total</div>
-                      <strong>{formData.exprimes}</strong>
-                    </div>
-                    <span>⚙️ Calcul automatique</span>
-                  </div>
-
-                  <div className="rs-field" style={{ gridTemplateColumns: '1fr' }}>
-                    <input
-                      type="number"
-                      value={formData.exprimes}
-                      disabled
-                      className="calculated"
-                    />
-                    {errors.exprimes && <span className="error">{errors.exprimes}</span>}
-                  </div>
-                </div>
-              </div>
-              )}
+      {loading ? (
+        <p>Chargement…</p>
+      ) : !selectedBureauId ? (
+        <p>Choisir un bureau pour saisir les résultats.</p>
+      ) : (
+        <>
+          {/* Bloc principaux - RESPONSIVE */}
+          <div className="resultats-saisie-grid">
+            {/* INSCRITS */}
+            <div className="resultats-field-inscrits">
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4, fontWeight: 700 }}>INSCRITS</div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={inputsMain.inscrits}
+                readOnly
+                disabled
+                style={{ width: '100%', padding: 6, background: '#f0f0f0', cursor: 'not-allowed', fontWeight: 700 }}
+                title="Inscrits pré-remplis depuis l'onglet Bureaux (lecture seule)"
+              />
             </div>
 
-            {/* LIGNE 2 : Voix (visuel) | Contrôles */}
-            <div className="rs-row rs-row--bottom">
-              {/* Voix par candidat (visuel + saisie) */}
-              <div className="rs-card rs-card--voix">
-                <h3>📊 Voix par candidat</h3>
-
-                {(() => {
-                  const displayed = buildDisplayedCandidates();
-                  const maxVoix = Math.max(0, ...Object.values(formData.voix || {}).map(v => Number(v) || 0));
-                  return (
-                    <div className="rs-voix-list">
-                      {displayed.map((candidat, index) => {
-                        const slot = getCandidateSlot(candidat, index);
-                        const label = getCandidateName(candidat, index);
-                        const v = Number(formData.voix?.[slot] ?? 0) || 0;
-                        const pct = maxVoix > 0 ? (v / maxVoix) * 100 : 0;
-
-                        return (
-                          <div key={slot} className="rs-voix-item">
-                            <div>
-                              <div className="rs-voix-label">{slot} — {getNomListeBySlot(slot) || label}</div>
-                              <div style={{ marginTop: 8 }}>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={formData.voix?.[slot] ?? 0}
-                                  onChange={(e) => handleVoixChange(slot, e.target.value)}
-                                  required
-                                />
-                              </div>
-                            </div>
-
-                            <div className="rs-voix-barwrap" aria-label={`Progression ${slot}`}>
-                              <div className="rs-voix-bar" style={{ width: `${pct}%` }} />
-                              <div className="rs-voix-bartext">{v.toLocaleString('fr-FR')} voix</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Contrôles à droite */}
-              <div className={`rs-card rs-controls ${!isControlsOk ? 'is-ko' : ''}`}>
-                <h3>✅ Contrôles</h3>
-                <div className="control-panel">
-                  <div className="resultats-controls">
-                    <div className={`control-check ${formData.votants === formData.blancs + formData.nuls + formData.exprimes ? 'valid' : 'invalid'}`}>
-                      <strong>Contrôle :</strong> Votants = Blancs + Nuls + Exprimés
-                      <br />
-                      {formData.votants} = {formData.blancs} + {formData.nuls} + {formData.exprimes}
-                      {formData.votants === formData.blancs + formData.nuls + formData.exprimes ? ' OK' : ' ERREUR'}
-                    </div>
-
-                    <div className={`control-check ${controleVoixStatus}`}>
-                      <strong>Contrôle :</strong> Σ voix candidats = Exprimés
-                      <br />
-                      {sumVoixCandidats} = {formData.exprimes}
-                      {controleVoixStatus === 'neutral'
-                        ? ' (en attente)'
-                        : (sumVoixCandidats === exprimesValue ? ' OK' : ' ERREUR')}
-                    </div>
-                  </div>
-                </div>
-              </div>
+            {/* VOTANTS */}
+            <div className="resultats-field-votants">
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>VOTANTS</div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={inputsMain.votants}
+                onChange={(e) => setInputsMain((prev) => ({ ...prev, votants: e.target.value }))}
+                onBlur={() => onBlurMain('votants')}
+                style={{ width: '100%', padding: 6 }}
+              />
             </div>
 
-            {message && (
-              <div className={`message ${message.type}`}>
-                {message.text}
-              </div>
-            )}
+            {/* BLANCS */}
+            <div className="resultats-field-blancs">
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>BLANCS</div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={inputsMain.blancs}
+                onChange={(e) => setInputsMain((prev) => ({ ...prev, blancs: e.target.value }))}
+                onBlur={() => onBlurMain('blancs')}
+                style={{ width: '100%', padding: 6 }}
+              />
+            </div>
 
-            <div className={`form-actions ${!isControlsOk ? 'is-ko' : ''}`}>
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={loading || Object.keys(errors).length > 0}
-              >
-                {loading ? 'Enregistrement...' : 'Enregistrer les resultats'}
-              </button>
+            {/* NULS */}
+            <div className="resultats-field-nuls">
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>NULS</div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={inputsMain.nuls}
+                onChange={(e) => setInputsMain((prev) => ({ ...prev, nuls: e.target.value }))}
+                onBlur={() => onBlurMain('nuls')}
+                style={{ width: '100%', padding: 6 }}
+              />
+            </div>
+
+            {/* EXPRIMÉS */}
+            <div className="resultats-field-exprimes">
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4, fontWeight: 700 }}>EXPRIMÉS</div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={exprimesSafe}
+                readOnly
+                disabled
+                style={{ width: '100%', padding: 6, background: '#f0f0f0', cursor: 'not-allowed', fontWeight: 700 }}
+                title="Exprimés calculés automatiquement (votants - blancs - nuls)"
+              />
             </div>
           </div>
-          </>
-        )}
-      </form>
+
+          {/* Tableau voix */}
+          <div className="resultats-voix-box"><div className="resultats-voix-scroll">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Liste</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Tête de liste</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Voix</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidatsActifs.map((c) => {
+                const listeId = String(c?.listeId ?? '').trim();
+                const nomListe = String(c?.nomListe ?? '').trim();
+                const tete = `${String(c?.teteListePrenom ?? '').trim()} ${String(c?.teteListeNom ?? '').trim()}`.trim();
+
+                return (
+                  <tr key={listeId || nomListe || Math.random().toString(16).slice(2)}>
+                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>{listeId || '—'} {nomListe ? `— ${nomListe}` : ''}</td>
+                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>{tete || '—'}</td>
+                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6, width: 160 }}>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={inputsVoix[listeId] ?? ''}
+                        onChange={(e) => setInputsVoix((prev) => ({ ...prev, [listeId]: e.target.value }))}
+                        onBlur={() => onBlurVoix(listeId)}
+                        style={{ width: '100%', padding: 6 }}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+              {candidatsActifs.length === 0 && (
+                <tr>
+                  <td colSpan={3} style={{ padding: 10, opacity: 0.8 }}>
+                    Aucun candidat actif pour le tour {tourActuel}.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            </table>
+          </div>
+        </div>
+        </>
+      )}
     </div>
   );
-};
-
-
-export default ResultatsSaisieBureau;
+}

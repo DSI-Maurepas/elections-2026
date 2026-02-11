@@ -711,22 +711,21 @@
     display: none !important;
   }
 
-  /* Masquer uniquement les blocs 1er tour et 2nd tour (sans classe spécifique) */
-  .nav-info .info-block:not(.info-block--auth):not(.info-block--access) {
+  /* Masquer les blocs d'info dates et horaires, garder uniquement Base de données */
+  .nav-info .info-block:not(.info-block--auth) {
     display: none !important;
   }
 
-  /* Les blocs Google et Accès côte à côte, chacun 50% de largeur */
-  .info-block--auth,
-  .info-block--access {
+  /* Le bloc Base de données prend toute la largeur en mobile */
+  .info-block--auth {
     width: 100%;
     max-width: none;
   }
 
-  /* Ajuster la grille d'info pour 2 blocs côte à côte (Google | Accès) */
+  /* Ajuster la grille d'info pour un seul bloc */
   .top-info-row {
-    grid-template-columns: 1fr 1fr !important;
-    gap: 0.5rem !important;
+    grid-template-columns: 1fr !important;
+    gap: 0 !important;
   }
 }
 

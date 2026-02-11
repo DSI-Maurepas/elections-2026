@@ -60,8 +60,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 h1 { font-size: var(--font-size-4xl); }
-h2 { font-size: 1.25rem; } /* Police uniforme */
-h3 { font-size: 1.25rem; } /* Police uniforme */
+h2 { font-size: var(--font-size-3xl); }
+h3 { font-size: var(--font-size-2xl); }
 h4 { font-size: var(--font-size-xl); }
 h5 { font-size: var(--font-size-lg); }
 h6 { font-size: var(--font-size-base); }
@@ -3389,60 +3389,223 @@ input:focus, select:focus, textarea:focus {
   height: 9px;
 }
 
-/* ========================================
-/* ========================================
-   LAYOUT BV : Participation côte à côte
-   ======================================== */
+/* ================================================================
+   BARRES DE PROGRESSION RÉSULTATS - PLUS ÉPAISSES
+   ================================================================ */
 
-/* ========================================
-   LAYOUT BV : Participation côte à côte
-   ======================================== */
-
-/* Desktop : 2 colonnes côte à côte */
-.participation-bv-layout {
-  display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
-  gap: 24px !important;
-  margin-bottom: 24px !important;
-  width: 100% !important;
-  align-items: start !important;
+/* Barre de progression dans les cartes top 2 qualifiés */
+.top3-progress-bar {
+  width: 100%;
+  height: 6px; /* Plus épais (était 2-3px avant) */
+  margin-top: 8px;
+  border-radius: 3px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
-/* Forcer les composants enfants à respecter la grille */
-.participation-bv-layout > .participation-saisie,
-.participation-bv-layout > .participation-tableau {
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-  box-sizing: border-box !important;
-  margin-bottom: 0 !important;
+/* Barre de progression dans la section "Autres candidats" */
+.classement-progress-bar {
+  width: 100%;
+  height: 5px; /* Plus épais */
+  margin-top: 6px;
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
-/* S'assurer que les composants internes ne débordent pas */
-.participation-bv-layout .participation-saisie > *,
-.participation-bv-layout .participation-tableau > * {
-  max-width: 100% !important;
-  box-sizing: border-box !important;
+/* Ajustements pour les cartes top3 */
+.top3-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
 
-/* Responsive : Empiler les blocs sur mobile/tablette */
-@media (max-width: 1024px) {
-  .participation-bv-layout {
-    grid-template-columns: 1fr !important;
-    gap: 16px !important;
+/* Ajustements pour les items de classement */
+.classement-item {
+  position: relative;
+  padding-bottom: 12px; /* Espace pour la barre */
+}
+
+
+/* ================================================================
+   BARRES DE PROGRESSION RÉSULTATS - PROPORTIONNELLES AU %
+   Ajouté le 06/02/2026 - Correction
+   ================================================================ */
+
+/* === BARRES TOP 2 QUALIFIÉS === */
+
+/* Container de la barre (fond gris) */
+.top3-progress-container {
+  width: 100%;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+/* Barre de remplissage (couleur, width = % de voix) */
+.top3-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.top3-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/* === SECTION "AUTRES CANDIDATS" - LAYOUT COMPACT === */
+
+.classement-item-compact {
+  display: grid;
+  grid-template-columns: 50px 1fr auto auto auto;
+  grid-template-rows: auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  background: white;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.classement-item-compact:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* Numéro dans un cercle grisé */
+.classement-rank-circle {
+  grid-column: 1;
+  grid-row: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+/* Nom du candidat */
+.classement-item-compact .classement-name {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e3c72;
+}
+
+/* Nombre de voix */
+.classement-item-compact .classement-voix {
+  grid-column: 3;
+  grid-row: 1;
+  padding: 4px 14px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(239, 168, 68, 0.32);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 16px;
+  color: #3f3838;
+}
+
+/* Pourcentage */
+.classement-item-compact .classement-pct {
+  grid-column: 4;
+  grid-row: 1;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+/* Badge ÉLIMINÉ compact */
+.badge.eliminated-compact {
+  grid-column: 5;
+  grid-row: 1;
+  padding: 4px 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  background: rgba(239, 68, 68, 0.32);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 12px;
+  color: #991b1b;
+  white-space: nowrap;
+}
+
+/* Barre de progression (toute la largeur en dessous) */
+.classement-progress-container {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  height: 9px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+/* Barre de remplissage (width = % de voix) */
+.classement-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* === RESPONSIVE === */
+
+@media (max-width: 900px) {
+  .classement-item-compact {
+    grid-template-columns: 40px 1fr auto auto auto;
+    gap: 8px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+  }
+
+  .classement-rank-circle {
+    width: 35px;
+    height: 35px;
+    font-size: 1rem;
+  }
+
+  .classement-item-compact .classement-name {
+    font-size: 0.95rem;
+  }
+
+  .classement-item-compact .classement-voix,
+  .classement-item-compact .classement-pct {
+    font-size: 0.9rem;
+  }
+
+  .badge.eliminated-compact {
+    font-size: 0.7rem;
+    padding: 3px 8px;
   }
 }
 
-/* DEBUG : Ajouter une bordure visible pour vérifier le layout */
-.participation-bv-layout {
-  border: 2px dashed #4CAF50 !important;
-  padding: 8px !important;
-}
+@media (max-width: 600px) {
+  /* En très petit écran, on empile le badge sur une 2ème ligne */
+  .classement-item-compact {
+    grid-template-columns: 35px 1fr auto auto;
+    grid-template-rows: auto auto auto;
+  }
 
-.participation-bv-layout > .participation-saisie {
-  border: 2px solid #2196F3 !important;
-}
+  .badge.eliminated-compact {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    justify-self: start;
+    margin-top: 4px;
+  }
 
-.participation-bv-layout > .participation-tableau {
-  border: 2px solid #FF9800 !important;
+  .classement-progress-container {
+    grid-row: 3;
+    margin-top: 8px;
+  }
 }

@@ -10,9 +10,6 @@ const PassageSecondTour = ({
   electionState,
   passerSecondTour,
   reloadElectionState,
-  revenirPremierTour,
-  accessAuth,
-
 }) => {
   const { data: candidats, load: loadCandidats } = useGoogleSheets('Candidats');
   const { data: resultats, load: loadResultats } = useGoogleSheets('Resultats_T1');
@@ -26,7 +23,6 @@ const PassageSecondTour = ({
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [adminError, setAdminError] = useState('');
   const [showConfirmT2Modal, setShowConfirmT2Modal] = useState(false);
-  const [showConfirmBackModal, setShowConfirmBackModal] = useState(false);
   const [pendingQualified, setPendingQualified] = useState([]);
 
   // Flag piloté par l'Administration (ElectionsState: secondTourEnabled)
@@ -205,46 +201,6 @@ const PassageSecondTour = ({
       setPendingQualified([]);
     }
   };
-
-  const confirmRetourT1 = async () => {
-    if (typeof revenirPremierTour !== 'function') {
-      setMessage({ type: 'warning', text: "Action indisponible : fonction 'revenirPremierTour' manquante." });
-      setShowConfirmBackModal(false);
-      return;
-    }
-
-    setLoading(true);
-    setMessage(null);
-
-    try {
-      await revenirPremierTour();
-
-      // Recharge l'état depuis la source unique (App.jsx)
-      if (typeof reloadElectionState === 'function') {
-        await reloadElectionState();
-      }
-
-      try {
-        auditService?.log?.('ADMIN_RETOUR_T1', {
-          when: new Date().toISOString(),
-          user: authService?.getUser?.() || null,
-        });
-      } catch (e) {
-        // ne jamais casser l'UI pour un audit
-      }
-
-      setMessage({ type: 'success', text: 'Retour au 1er tour effectué.' });
-    } catch (e) {
-      setMessage({
-        type: 'warning',
-        text: `Erreur lors du retour au 1er tour : ${e?.message || e}`,
-      });
-    } finally {
-      setLoading(false);
-      setShowConfirmBackModal(false);
-    }
-  };
-
 
   const cancelPassageT2 = () => {
     setShowConfirmT2Modal(false);
@@ -453,13 +409,7 @@ const PassageSecondTour = ({
       color: '#fff',
       boxShadow: '0 10px 24px rgba(37, 99, 235, 0.25)',
     },
-      modalBtnDanger: {
-      background: 'rgba(220, 38, 38, 0.95)',
-      border: '1px solid rgba(220, 38, 38, 0.95)',
-      color: '#fff',
-      boxShadow: '0 10px 24px rgba(220, 38, 38, 0.22)',
-    },
-};
+  };
 
   const maxVoix = useMemo(() => {
     if (!Array.isArray(classement) || classement.length === 0) return 0;
@@ -692,23 +642,6 @@ const PassageSecondTour = ({
         >
           {adminUnlocked ? 'Passage au 2nd tour actif' : '➡️ Confirmer passage au 2nd tour'}
         </button>
-        {adminUnlocked && secondTourEnabled && (
-          <button
-            type="button"
-            onClick={() => setShowConfirmBackModal(true)}
-            disabled={loading}
-            className="action-btn"
-            style={{
-              background: 'rgba(220, 38, 38, 0.10)',
-              border: '1px solid rgba(220, 38, 38, 0.35)',
-              color: 'rgba(220, 38, 38, 0.95)',
-            }}
-            title="Revenir au 1er tour (action administrative)"
-          >
-            ↩️ Repasser au 1er tour
-          </button>
-        )}
-
       </div>
       {adminError && (
         <div className="message warning" style={{ marginTop: 10 }}>
@@ -750,51 +683,6 @@ const PassageSecondTour = ({
                 }}
               >
                 Confirmer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-      {showConfirmBackModal && (
-        <div style={styles.modalOverlay} role="dialog" aria-modal="true">
-          <div style={styles.modalCard}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Repasser au 1er tour</h3>
-            </div>
-            <div style={styles.modalBody}>
-              <div>
-                <strong>Attention :</strong> vous allez réactiver le 1er tour et désactiver le 2nd tour.
-              </div>
-              <div style={{ marginTop: 10, opacity: 0.9 }}>
-                Cette action est administrative et doit être confirmée.
-              </div>
-            </div>
-            <div style={styles.modalFooter}>
-              <button
-                type="button"
-                onClick={() => setShowConfirmBackModal(false)}
-                disabled={loading}
-                style={{
-                  ...styles.modalBtn,
-                  ...styles.modalBtnCancel,
-                  ...(loading ? { opacity: 0.65, cursor: 'not-allowed' } : null),
-                }}
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={confirmRetourT1}
-                disabled={loading}
-                style={{
-                  ...styles.modalBtn,
-                  ...styles.modalBtnDanger,
-                  ...(loading ? { opacity: 0.65, cursor: 'not-allowed' } : null),
-                }}
-              >
-                Confirmer retour T1
               </button>
             </div>
           </div>

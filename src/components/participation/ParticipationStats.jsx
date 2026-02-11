@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 
+// Normalisation robuste des booléens venant de Google Sheets (TRUE/VRAI/OUI/1/X/✓...)
+const parseBool = (v) => {
+  if (v === true || v === 1) return true;
+  if (v === false || v === 0 || v == null) return false;
+  const s = String(v).trim().toLowerCase();
+  return ['true','vrai','oui','yes','1','x','✓','y','on'].includes(s);
+};
+
+
 /**
  * Statistiques temps réel de la participation
  *
@@ -9,7 +18,7 @@ import { useGoogleSheets } from '../../hooks/useGoogleSheets';
  *   (cas typique : saisie en cours, BV1 à 16h=523 et 17h/18h/19h/20h encore à 0).
  * - Cela évite les absurdités : "0 votants à 20h" et "abstention = inscrits" alors qu'il y a déjà des votants.
  */
-const ParticipationStats = ({ electionState}) => {
+const ParticipationStats = ({ electionState, isBureauVote = false }) => {
   // Bureaux
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
 
@@ -242,7 +251,7 @@ const ParticipationStats = ({ electionState}) => {
 
   return (
     <div className="participation-stats">
-      <h2>📈 Statistiques de participation <br /> Tour {electionState.tourActuel}</h2>
+      <h3>📈 Statistiques de participation <br /> Tour {electionState.tourActuel}</h3>
 
       {/* Chiffres clés (KPI) */}
       <div className="stats-grid">
@@ -291,7 +300,8 @@ const ParticipationStats = ({ electionState}) => {
         </div>
       </div>
 
-      {/* Bureaux extrêmes (max/min taux) */}
+      {/* Bureaux extrêmes (max/min taux) — masqué */}
+      {false && (
       <div className="extremes-section">
         <h3>🎯 Bureaux extrêmes</h3>
 
@@ -348,6 +358,8 @@ const ParticipationStats = ({ electionState}) => {
         </div>
       </div>
 
+      )}
+
       {/* Chiffres clés (Insights renommés) */}
       <div className="analysis-section">
         <h3>📌 Chiffres clés</h3>
@@ -382,7 +394,8 @@ const ParticipationStats = ({ electionState}) => {
               <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.maxProg.delta > 0 ? (chiffresCles.minProg.delta / chiffresCles.maxProg.delta) * 100 : 0))}%` }} /></div>
             </div>
 
-            <div className="metric-card">
+            {false && (
+<div className="metric-card">
               <div className="metric-head">
                 <span className="metric-emoji">🧍‍♂️</span>
                 <span className="metric-title">Plus forte abstention</span>
@@ -394,8 +407,10 @@ const ParticipationStats = ({ electionState}) => {
               </div>
               <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.maxAbst.inscrits > 0 ? (chiffresCles.maxAbst.abst / chiffresCles.maxAbst.inscrits) * 100 : 0))}%` }} /></div>
             </div>
+            )}
 
-            <div className="metric-card">
+            {false && (
+<div className="metric-card">
               <div className="metric-head">
                 <span className="metric-emoji">🏅</span>
                 <span className="metric-title">% votants le plus élevé</span>
@@ -407,8 +422,10 @@ const ParticipationStats = ({ electionState}) => {
               </div>
               <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.maxTaux.taux))}%` }} /></div>
             </div>
+            )}
 
-            <div className="metric-card">
+            {false && (
+<div className="metric-card">
               <div className="metric-head">
                 <span className="metric-emoji">🧊</span>
                 <span className="metric-title">% votants le plus faible</span>
@@ -420,6 +437,7 @@ const ParticipationStats = ({ electionState}) => {
               </div>
               <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.minTaux.taux))}%` }} /></div>
             </div>
+            )}
 
             <div className="metric-card">
               <div className="metric-head">
@@ -434,13 +452,15 @@ const ParticipationStats = ({ electionState}) => {
               </div>
             </div>
 
-            <div className="metric-card">
+            {false && (
+<div className="metric-card">
               <div className="metric-head">
                 <span className="metric-emoji">✅</span>
                 <span className="metric-title">% de votants (communal)</span>
               </div>
               <div className="metric-value">Taux communal : <strong>{stats.tauxParticipation.toFixed(2)}%</strong></div>
             </div>
+            )}
 
             <div className="metric-card">
               <div className="metric-head">

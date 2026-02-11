@@ -1,7 +1,7 @@
 import React from 'react';
 const ConfigurationT2 = ({ electionState}) => {  return (
     <div className="config-t2">
-      <h2>⚙️ Configuration 2nd tour</h2>
+      <h3>⚙️ Configuration 2nd tour</h3>
 
       <div
         className="card"
