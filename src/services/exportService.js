@@ -5,7 +5,14 @@
 import { generateFilename, formatDateTime, formatNumber, formatPercent } from '../utils/formatters';
 import { ELECTION_CONFIG, SHEET_NAMES } from '../utils/constants';
 import auditService from './auditService';
-import * as XLSX from 'xlsx';
+// ⚡ Import dynamique : xlsx (~2 Mo) n'est chargé qu'au premier export
+let _XLSX = null;
+async function getXLSX() {
+  if (!_XLSX) {
+    _XLSX = await import('xlsx');
+  }
+  return _XLSX;
+}
 import googleSheetsService from './googleSheetsService';
 import calculService from './calculService';
 
@@ -103,8 +110,9 @@ case 'audit':
    * NOTE: on conserve le nom historique exportToCSV pour éviter de casser l'UI,
    * mais la sortie est bien un .xlsx.
    */
-  exportToCSV(data, filename) {
+  async exportToCSV(data, filename) {
     try {
+      const XLSX = await getXLSX();
       const safeFilename = (filename || 'export.xlsx').replace(/\.csv$/i, '.xlsx');
 
       const rows = Array.isArray(data) ? data : [];
@@ -457,6 +465,7 @@ const data = (auditData || [])
    */
   async exportCompletCSV(tour = 1) {
     try {
+      const XLSX = await getXLSX();
       // ✅ Export complet : un seul fichier XLSX (plusieurs onglets)
       const bureaux = await googleSheetsService.getData(SHEET_NAMES.BUREAUX);
       const candidats = await googleSheetsService.getData(SHEET_NAMES.CANDIDATS);
@@ -1489,6 +1498,7 @@ const data = (auditData || [])
    * - 1 fichier, 1 ou 2 feuilles selon disponibilité
    */
   async exportSiegesXLSX(municipal = [], communautaire = [], tour = 1, options = {}) {
+    const XLSX = await getXLSX();
     const only = options?.only || 'all';
 
     const wb = XLSX.utils.book_new();
@@ -1664,7 +1674,8 @@ const data = (auditData || [])
   /**
    * Export XLSX côté client (Blob)
    */
-  exportToXLSX(workbook, filename) {
+  async exportToXLSX(workbook, filename) {
+    const XLSX = await getXLSX();
     const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     this.downloadBlob(blob, filename);

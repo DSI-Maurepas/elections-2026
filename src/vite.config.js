@@ -20,8 +20,19 @@ export default defineConfig(({ mode }) => {
 
     server: {
       port: 3000,
-      strictPort: true, // Évite de changer de port si le 3000 est pris (critique pour OAuth)
+      strictPort: true,
       host: true,
+      // ⚡ Désactiver la surveillance de fichiers inutiles
+      watch: {
+        ignored: ['**/node_modules/**', '**/.git/**'],
+      },
+    },
+
+    // ⚡ Pré-bundler les dépendances lourdes une seule fois
+    optimizeDeps: {
+      include: ['react', 'react-dom'],
+      // xlsx et recharts sont chargés en lazy, ne pas les pré-bundler au démarrage
+      exclude: [],
     },
 
     build: {

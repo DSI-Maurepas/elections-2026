@@ -1,42 +1,34 @@
 // src/App.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import authService, { loginWithCode, getAuthState, logoutAccess, isBV } from "./services/authService";
 import uiService from "./services/uiService";
 import { useElectionState } from "./hooks/useElectionState";
 
 import Navigation from "./components/layout/Navigation";
 import Footer from "./components/layout/Footer";
-import Dashboard from "./components/dashboard/Dashboard";
 
-import ParticipationSaisie from "./components/participation/ParticipationSaisie";
-import ParticipationTableau from "./components/participation/ParticipationTableau";
-import ParticipationStats from "./components/participation/ParticipationStats";
-
-import ResultatsSaisieBureau from "./components/resultats/ResultatsSaisieBureau";
-import ResultatsConsolidation from "./components/resultats/ResultatsConsolidation";
-import ResultatsValidation from "./components/resultats/ResultatsValidation";
-import ResultatsClassement from "./components/resultats/ResultatsClassement";
-
-import PassageSecondTour from "./components/secondTour/PassageSecondTour";
-import ConfigurationT2 from "./components/secondTour/ConfigurationT2";
-
-import SiegesMunicipal from "./components/sieges/SiegesMunicipal";
-import SiegesCommunautaire from "./components/sieges/SiegesCommunautaire";
-
-import ConfigBureaux from "./components/admin/ConfigBureaux";
-import ConfigCandidats from "./components/admin/ConfigCandidats";
-import AuditLog from "./components/admin/AuditLog";
-
-import ExportPDF from "./components/exports/ExportPDF";
-import ExportExcel from "./components/exports/ExportExcel";
+// ⚡ Lazy loading : chaque page n'est chargée qu'à la navigation
+const Dashboard = React.lazy(() => import("./components/dashboard/Dashboard"));
+const ParticipationSaisie = React.lazy(() => import("./components/participation/ParticipationSaisie"));
+const ParticipationTableau = React.lazy(() => import("./components/participation/ParticipationTableau"));
+const ParticipationStats = React.lazy(() => import("./components/participation/ParticipationStats"));
+const ResultatsSaisieBureau = React.lazy(() => import("./components/resultats/ResultatsSaisieBureau"));
+const ResultatsConsolidation = React.lazy(() => import("./components/resultats/ResultatsConsolidation"));
+const ResultatsValidation = React.lazy(() => import("./components/resultats/ResultatsValidation"));
+const ResultatsClassement = React.lazy(() => import("./components/resultats/ResultatsClassement"));
+const PassageSecondTour = React.lazy(() => import("./components/secondTour/PassageSecondTour"));
+const ConfigurationT2 = React.lazy(() => import("./components/secondTour/ConfigurationT2"));
+const SiegesMunicipal = React.lazy(() => import("./components/sieges/SiegesMunicipal"));
+const SiegesCommunautaire = React.lazy(() => import("./components/sieges/SiegesCommunautaire"));
+const ConfigBureaux = React.lazy(() => import("./components/admin/ConfigBureaux"));
+const ConfigCandidats = React.lazy(() => import("./components/admin/ConfigCandidats"));
+const AuditLog = React.lazy(() => import("./components/admin/AuditLog"));
+const ExportPDF = React.lazy(() => import("./components/exports/ExportPDF"));
+const ExportExcel = React.lazy(() => import("./components/exports/ExportExcel"));
 
 import { canAccessPage } from "./config/authConfig";
 
-import "./styles/App.css";
-import "./styles/variables.css";
-import "./styles/components/navigation.css";
-import "./styles/components/dashboard.css";
-import "./styles/components/components.css";
+// CSS: tout est centralisé dans styles/App.css (chargé par main.jsx)
 
 function AccessGate({ onAuthenticated }) {
   const [code, setCode] = useState("");
@@ -424,11 +416,13 @@ export default function App() {
       />
 
       <main className="app-main" role="main">
-        {currentPage === "dashboard" ? renderPage() : (
-          <div className="page-container">
-            {renderPage()}
-          </div>
-        )}
+        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center' }}>Chargement…</div>}>
+          {currentPage === "dashboard" ? renderPage() : (
+            <div className="page-container">
+              {renderPage()}
+            </div>
+          )}
+        </Suspense>
       </main>
 
       <Footer />

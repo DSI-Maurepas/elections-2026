@@ -1,6 +1,9 @@
 /* src/styles/App.css */
 @import './variables.css';
 @import './components/sieges.css';
+@import './components/navigation.css';
+@import './components/dashboard.css';
+@import './components/components.css';
 
 /* Reset et base */
 * {
