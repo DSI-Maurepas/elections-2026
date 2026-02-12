@@ -36,6 +36,10 @@ const ResultatsConsolidation = ({ electionState}) => {
     electionState.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2'
   );
 
+  // ⚠️ ADMIN uniquement : données T1/T2 pour statistiques et progression
+  const { data: resultatsT1, load: loadResultatsT1 } = useGoogleSheets('Resultats_T1');
+  const { data: resultatsT2, load: loadResultatsT2 } = useGoogleSheets('Resultats_T2');
+
   const [totaux, setTotaux] = useState({
     inscrits: 0,
     votants: 0,
@@ -96,7 +100,13 @@ const ResultatsConsolidation = ({ electionState}) => {
     loadBureaux();
     loadCandidats();
     loadResultats();
-  }, [loadBureaux, loadCandidats, loadResultats]);
+
+    // ADMIN : on charge aussi T1/T2 pour les stats inter-tours (sans impact BV)
+    if (!isBureau) {
+      loadResultatsT1();
+      loadResultatsT2();
+    }
+  }, [loadBureaux, loadCandidats, loadResultats, loadResultatsT1, loadResultatsT2, isBureau]);
 
   // ---------- Consolidation locale ----------
   useEffect(() => {
@@ -219,6 +229,142 @@ const ResultatsConsolidation = ({ electionState}) => {
     return (totaux.nuls / totaux.votants) * 100;
   }, [totaux]);
 
+
+  // -------------------- ADMIN : statistiques par bureau (Tour courant) --------------------
+  const bureauxStats = useMemo(() => {
+    // BV : pas de stats globales (évite charge + régression UI)
+    if (isBureau) return [];
+    if (!Array.isArray(bureaux) || bureaux.length === 0) return [];
+
+    // Index résultats par bureauId (sur le tour courant)
+    const resultsByBureau = new Map();
+    for (const r of (resultats || [])) {
+      const bid = normalizeBureauId(r?.bureauId ?? '');
+      if (!bid) continue;
+      const agg = resultsByBureau.get(bid) || { votants: 0, blancs: 0, nuls: 0, exprimes: 0, voixSum: 0 };
+      agg.votants += Number(r?.votants) || 0;
+      agg.blancs += Number(r?.blancs) || 0;
+      agg.nuls += Number(r?.nuls) || 0;
+      agg.exprimes += Number(r?.exprimes) || 0;
+
+      const voixObj = r?.voix;
+      if (voixObj && typeof voixObj === 'object') {
+        for (const v of Object.values(voixObj)) agg.voixSum += Number(v) || 0;
+      }
+      resultsByBureau.set(bid, agg);
+    }
+
+    const getLabel = (b) => {
+      const id = b?.id ?? '';
+      const nom = b?.nom ?? b?.label ?? b?.bureau ?? b?.libelle ?? b?.lieu ?? '';
+      const idNorm = normalizeBureauId(id);
+      if (nom) return `BV${idNorm} — ${nom}`;
+      return `BV${idNorm}`;
+    };
+
+    return (bureaux || []).map((b) => {
+      const idNorm = normalizeBureauId(b?.id ?? '');
+      const r = resultsByBureau.get(idNorm) || { votants: 0, blancs: 0, nuls: 0, exprimes: 0, voixSum: 0 };
+      const inscrits = Number(b?.inscrits) || 0;
+      const votants = r.votants || 0;
+      const blancs = r.blancs || 0;
+      const nuls = r.nuls || 0;
+      const exprimes = (r.exprimes > 0 ? r.exprimes : Math.max(0, votants - blancs - nuls)) || 0;
+
+      const participationPct = inscrits > 0 ? (votants / inscrits) * 100 : 0;
+      const abstentions = Math.max(0, inscrits - votants);
+      const abstentionPct = inscrits > 0 ? (abstentions / inscrits) * 100 : 0;
+      const nulsPct = votants > 0 ? (nuls / votants) * 100 : 0;
+      const blancsPct = votants > 0 ? (blancs / votants) * 100 : 0;
+
+      return {
+        id: idNorm,
+        label: getLabel(b),
+        inscrits,
+        votants,
+        blancs,
+        nuls,
+        exprimes,
+        participationPct,
+        abstentions,
+        abstentionPct,
+        nulsPct,
+        blancsPct,
+      };
+    });
+  }, [isBureau, bureaux, resultats]);
+
+  // -------------------- ADMIN : progression votants T1 -> T2 (uniquement quand Tour 2) --------------------
+  const bureauxProgressionT1T2 = useMemo(() => {
+    if (isBureau) return [];
+    if (electionState.tourActuel !== 2) return [];
+    if (!Array.isArray(bureaux) || bureaux.length === 0) return [];
+
+    const aggTour = (rows) => {
+      const map = new Map();
+      for (const r of (rows || [])) {
+        const bid = normalizeBureauId(r?.bureauId ?? '');
+        if (!bid) continue;
+        const prev = map.get(bid) || { votants: 0 };
+        prev.votants += Number(r?.votants) || 0;
+        map.set(bid, prev);
+      }
+      return map;
+    };
+
+    const t1 = aggTour(resultatsT1);
+    const t2 = aggTour(resultatsT2);
+
+    return (bureaux || []).map((b) => {
+      const idNorm = normalizeBureauId(b?.id ?? '');
+      const inscrits = Number(b?.inscrits) || 0;
+      const vot1 = (t1.get(idNorm)?.votants) || 0;
+      const vot2 = (t2.get(idNorm)?.votants) || 0;
+
+      const pct1 = inscrits > 0 ? (vot1 / inscrits) * 100 : 0;
+      const pct2 = inscrits > 0 ? (vot2 / inscrits) * 100 : 0;
+
+      return {
+        id: idNorm,
+        label: b?.nom ?? b?.label ?? b?.bureau ?? b?.libelle ?? '',
+        inscrits,
+        vot1,
+        vot2,
+        deltaVotants: vot2 - vot1,
+        deltaPts: pct2 - pct1,
+      };
+    });
+  }, [isBureau, electionState.tourActuel, bureaux, resultatsT1, resultatsT2]);
+
+  const adminExtremes = useMemo(() => {
+    if (isBureau) return null;
+    const rows = bureauxStats;
+    if (!rows || rows.length === 0) return null;
+
+    const byMax = (key) => rows.reduce((best, r) => (best === null || (r[key] ?? -Infinity) > (best[key] ?? -Infinity) ? r : best), null);
+    const byMin = (key) => rows.reduce((best, r) => (best === null || (r[key] ?? Infinity) < (best[key] ?? Infinity) ? r : best), null);
+
+    const plusPart = byMax('participationPct');
+    const moinsPart = byMin('participationPct');
+
+    const plusAbs = byMax('abstentionPct');
+    const moinsAbs = byMin('abstentionPct');
+
+    const plusNuls = byMax('nulsPct');
+    const moinsNuls = byMin('nulsPct');
+
+    const plusBlancs = byMax('blancs');
+    const moinsBlancs = byMin('blancs');
+
+    let progMax = null;
+    let progMin = null;
+    if (electionState.tourActuel === 2 && Array.isArray(bureauxProgressionT1T2) && bureauxProgressionT1T2.length > 0) {
+      progMax = bureauxProgressionT1T2.reduce((best, r) => (best === null || (r.deltaVotants ?? -Infinity) > (best.deltaVotants ?? -Infinity) ? r : best), null);
+      progMin = bureauxProgressionT1T2.reduce((best, r) => (best === null || (r.deltaVotants ?? Infinity) < (best.deltaVotants ?? Infinity) ? r : best), null);
+    }
+
+    return { plusPart, moinsPart, plusAbs, moinsAbs, plusNuls, moinsNuls, plusBlancs, moinsBlancs, progMax, progMin };
+  }, [isBureau, bureauxStats, bureauxProgressionT1T2, electionState.tourActuel]);
   const top1 = classementCandidats[0];
   const top2 = classementCandidats[1];
 
@@ -559,7 +705,106 @@ const ResultatsConsolidation = ({ electionState}) => {
           </>
         )}
 
-        {/* ===== Classement officiel ===== */}
+        
+        {/* ===== ADMIN uniquement : blocs statistiques (2 par ligne) ===== */}
+        {!isBureau && adminExtremes && (
+          <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+            {/* Ligne 3 : Participation */}
+            <div className="stats-card" style={{ border: '2px solid rgba(59,130,246,0.55)', background: 'linear-gradient(135deg, rgba(59,130,246,0.10) 0%, rgba(147,197,253,0.08) 100%)' }}>
+              <div className="stats-card-label">📈 Bureau avec la plus forte participation</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusPart?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.plusPart?.votants ?? 0).toLocaleString('fr-FR')} votants • {clampPct(adminExtremes.plusPart?.participationPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="stats-card" style={{ border: '2px solid rgba(99,102,241,0.55)', background: 'linear-gradient(135deg, rgba(99,102,241,0.10) 0%, rgba(199,210,254,0.08) 100%)' }}>
+              <div className="stats-card-label">📉 Bureau avec la moins forte participation</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsPart?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.moinsPart?.votants ?? 0).toLocaleString('fr-FR')} votants • {clampPct(adminExtremes.moinsPart?.participationPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            {/* Ligne 4 : Abstention */}
+            <div className="stats-card" style={{ border: '2px solid rgba(244,63,94,0.55)', background: 'linear-gradient(135deg, rgba(244,63,94,0.10) 0%, rgba(254,205,211,0.08) 100%)' }}>
+              <div className="stats-card-label">🚫 Bureau avec la plus forte abstention</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusAbs?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.plusAbs?.abstentions ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.plusAbs?.abstentionPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="stats-card" style={{ border: '2px solid rgba(16,185,129,0.55)', background: 'linear-gradient(135deg, rgba(16,185,129,0.10) 0%, rgba(167,243,208,0.08) 100%)' }}>
+              <div className="stats-card-label">✅ Bureau avec la moins forte abstention</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsAbs?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.moinsAbs?.abstentions ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.moinsAbs?.abstentionPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            {/* Ligne 5 : Nuls */}
+            <div className="stats-card" style={{ border: '2px solid rgba(234,179,8,0.55)', background: 'linear-gradient(135deg, rgba(234,179,8,0.10) 0%, rgba(253,230,138,0.10) 100%)' }}>
+              <div className="stats-card-label">⚫ Bureau avec le taux de nuls le plus élevé</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusNuls?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.plusNuls?.nuls ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.plusNuls?.nulsPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="stats-card" style={{ border: '2px solid rgba(148,163,184,0.65)', background: 'linear-gradient(135deg, rgba(148,163,184,0.14) 0%, rgba(226,232,240,0.10) 100%)' }}>
+              <div className="stats-card-label">⚪ Bureau avec le taux de nuls le moins élevé</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsNuls?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.moinsNuls?.nuls ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.moinsNuls?.nulsPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            {/* Ligne 6 : Blancs */}
+            <div className="stats-card" style={{ border: '2px solid rgba(147,51,234,0.55)', background: 'linear-gradient(135deg, rgba(147,51,234,0.10) 0%, rgba(233,213,255,0.10) 100%)' }}>
+              <div className="stats-card-label">⚪ Bureau avec le plus de bulletins blancs</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusBlancs?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.plusBlancs?.blancs ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.plusBlancs?.blancsPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="stats-card" style={{ border: '2px solid rgba(203,213,225,0.85)', background: 'linear-gradient(135deg, rgba(203,213,225,0.18) 0%, rgba(241,245,249,0.12) 100%)' }}>
+              <div className="stats-card-label">⚪ Bureau avec le moins de bulletins blancs</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsBlancs?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.moinsBlancs?.blancs ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.moinsBlancs?.blancsPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            {/* Ligne 7 : Progression T1 -> T2 */}
+            <div className="stats-card" style={{ border: '2px solid rgba(34,197,94,0.55)', background: 'linear-gradient(135deg, rgba(34,197,94,0.11) 0%, rgba(134,239,172,0.07) 100%)' }}>
+              <div className="stats-card-label">🚀 Plus forte progression de votants 1er/2nd Tour</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>
+                {electionState.tourActuel === 2 ? (adminExtremes.progMax ? `BV${adminExtremes.progMax.id}` : '—') : 'Disponible en Tour 2'}
+              </div>
+              {electionState.tourActuel === 2 && adminExtremes.progMax && (
+                <div className="stats-card-meta">
+                  {Number(adminExtremes.progMax.deltaVotants ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.progMax.deltaPts ?? 0).toFixed(2)} pts
+                </div>
+              )}
+            </div>
+
+            <div className="stats-card" style={{ border: '2px solid rgba(239,68,68,0.55)', background: 'linear-gradient(135deg, rgba(239,68,68,0.10) 0%, rgba(254,202,202,0.08) 100%)' }}>
+              <div className="stats-card-label">🐢 Moins forte progression de votants 1er/2nd Tour</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>
+                {electionState.tourActuel === 2 ? (adminExtremes.progMin ? `BV${adminExtremes.progMin.id}` : '—') : 'Disponible en Tour 2'}
+              </div>
+              {electionState.tourActuel === 2 && adminExtremes.progMin && (
+                <div className="stats-card-meta">
+                  {Number(adminExtremes.progMin.deltaVotants ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.progMin.deltaPts ?? 0).toFixed(2)} pts
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+{/* ===== Classement officiel ===== */}
         <div
           style={{
             marginTop: 22,
@@ -656,18 +901,17 @@ const ResultatsConsolidation = ({ electionState}) => {
                     <div
                       key={c.listeId || idx}
                       style={{
-                        borderRadius: 16,
-                        padding: '10px 22px',
-                        background: 'rgba(255,255,255,0.92)',
                         width: '100%',
                         maxWidth: '100%',
                         boxSizing: 'border-box',
-                        minWidth: 0,
+                        borderRadius: 16,
+                        padding: '10px 22px',
+                        background: 'rgba(255,255,255,0.92)',
                         border: `2px solid ${isQualifie ? color : 'rgba(15, 23, 42, 0.10)'}`,
                         boxShadow: '0 10px 18px rgba(2, 6, 23, 0.08)',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: '1 1 0' }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
