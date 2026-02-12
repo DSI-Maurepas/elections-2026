@@ -19,28 +19,6 @@ const parseBool = (v) => {
  * - Cela évite les absurdités : "0 votants à 20h" et "abstention = inscrits" alors qu'il y a déjà des votants.
  */
 const ParticipationStats = ({ electionState, isBureauVote = false }) => {
-
-  // Détection "responsive" (même logique en écran et mobile, sans dépendre du CSS)
-  // Utilisé uniquement pour ajuster l'affichage BV, comme demandé (pas d'impact ADMIN/MAIRIE).
-  const [isResponsive, setIsResponsive] = useState(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return false;
-    return window.matchMedia('(max-width: 900px)').matches;
-  });
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(max-width: 900px)');
-    const handler = () => setIsResponsive(mq.matches);
-    handler();
-    if (mq.addEventListener) mq.addEventListener('change', handler);
-    else mq.addListener(handler);
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener('change', handler);
-      else mq.removeListener(handler);
-    };
-  }, []);
-
-  const isBureauResponsive = Boolean(isBureauVote && isResponsive);
   // Bureaux
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
 
@@ -271,6 +249,20 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
     };
   }, [participation, bureaux, heures]);
 
+  // Progression moyenne communale (points de % par heure) — profil ADMIN
+  const progressionMoyennePctParHeure = useMemo(() => {
+    const evo = stats?.evolution;
+    if (!Array.isArray(evo) || evo.length < 2) return null;
+
+    const first = Number(evo[0]?.taux ?? 0);
+    const last = Number(evo[evo.length - 1]?.taux ?? 0);
+    const intervals = Math.max(1, evo.length - 1);
+
+    const avg = (last - first) / intervals;
+    return Number.isFinite(avg) ? avg : null;
+  }, [stats]);
+
+
   return (
     <div className="participation-stats">
       <h3>📈 Statistiques de participation <br /> Tour {electionState.tourActuel}</h3>
@@ -394,15 +386,12 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
           <div className="analysis-diagrams">
             <div className="metric-card">
               <div className="metric-head">
-                <span className="metric-emoji">{isBureauResponsive ? "⏱️" : "🚀"}</span>
-                <span className="metric-title">{isBureauResponsive ? "⏱️ Heure la plus chargée" : "Plus forte progression (votants)"}</span>
+                <span className="metric-emoji">🚀</span>
+                <span className="metric-title">Plus forte progression (votants)</span>
               </div>
               <div className="metric-value">
-                {isBureauResponsive ? (
-                  <>Chargée : {chiffresCles.maxProg.heureDebut}→{chiffresCles.maxProg.heureFin} (<strong>+{chiffresCles.maxProg.delta.toLocaleString('fr-FR')}</strong>)</>
-                ) : (
-                  <>{chiffresCles.maxProg.bureauLabel} — {chiffresCles.maxProg.heureDebut}→{chiffresCles.maxProg.heureFin} :<strong> +{chiffresCles.maxProg.delta.toLocaleString('fr-FR')}</strong></>
-                )}
+                {chiffresCles.maxProg.bureauLabel} — {chiffresCles.maxProg.heureDebut}→{chiffresCles.maxProg.heureFin} :
+                <strong> +{chiffresCles.maxProg.delta.toLocaleString('fr-FR')}</strong>
               </div>
               <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.maxProg.delta > 0 ? 100 : 0))}%` }} /></div>
             </div>
@@ -410,17 +399,28 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
             <div className="metric-card">
               <div className="metric-head">
                 <span className="metric-emoji">🐢</span>
-                <span className="metric-title">{isBureauResponsive ? "🐢 Heure la plus calme" : "Moins forte progression (votants)"}</span>
+                <span className="metric-title">Moins forte progression (votants)</span>
               </div>
               <div className="metric-value">
-                {isBureauResponsive ? (
-                  <>Calme : {chiffresCles.minProg.heureDebut}→{chiffresCles.minProg.heureFin} (<strong>+{chiffresCles.minProg.delta.toLocaleString('fr-FR')}</strong>)</>
-                ) : (
-                  <>{chiffresCles.minProg.bureauLabel} — {chiffresCles.minProg.heureDebut}→{chiffresCles.minProg.heureFin} :<strong> +{chiffresCles.minProg.delta.toLocaleString('fr-FR')}</strong></>
-                )}
+                {chiffresCles.minProg.bureauLabel} — {chiffresCles.minProg.heureDebut}→{chiffresCles.minProg.heureFin} :
+                <strong> +{chiffresCles.minProg.delta.toLocaleString('fr-FR')}</strong>
               </div>
               <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.maxProg.delta > 0 ? (chiffresCles.minProg.delta / chiffresCles.maxProg.delta) * 100 : 0))}%` }} /></div>
             </div>
+
+
+{/* ADMIN : progression moyenne communale en points de % par heure */}
+{!isBureauVote && progressionMoyennePctParHeure != null && (
+  <div className="metric-card">
+    <div className="metric-head">
+      <span className="metric-emoji">📊</span>
+      <span className="metric-title">Progression moyenne</span>
+    </div>
+    <div className="metric-value">
+      <strong>{progressionMoyennePctParHeure.toFixed(2)}%</strong>/heure
+    </div>
+  </div>
+)}
 
             {false && (
 <div className="metric-card">
@@ -467,7 +467,6 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
             </div>
             )}
 
-            {!isBureauVote && (
             <div className="metric-card">
               <div className="metric-head">
                 <span className="metric-emoji">⏱️</span>
@@ -480,7 +479,7 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
                 {' '}(<strong>+{chiffresCles.heuresChargees.minHeure.delta.toLocaleString('fr-FR')}</strong>)
               </div>
             </div>
-            )}
+
             {false && (
 <div className="metric-card">
               <div className="metric-head">
@@ -491,29 +490,30 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
             </div>
             )}
 
-            {!isBureauVote && (
+                        {isBureauVote && (
               <>
-                <div className="metric-card">
-                  <div className="metric-head">
-                    <span className="metric-emoji">⚪</span>
-                    <span className="metric-title">% de blancs</span>
-                  </div>
-                  <div className="metric-value">
-                    {stats.pctBlancs == null ? 'Données non disponibles' : <>Blancs / votants : <strong>{stats.pctBlancs.toFixed(2)}%</strong></>}
-                  </div>
-                </div>
+<div className="metric-card">
+              <div className="metric-head">
+                <span className="metric-emoji">⚪</span>
+                <span className="metric-title">% de blancs</span>
+              </div>
+              <div className="metric-value">
+                {stats.pctBlancs == null ? 'Données non disponibles' : <>Blancs / votants : <strong>{stats.pctBlancs.toFixed(2)}%</strong></>}
+              </div>
+            </div>
 
-                <div className="metric-card">
-                  <div className="metric-head">
-                    <span className="metric-emoji">⚫</span>
-                    <span className="metric-title">% de nuls</span>
-                  </div>
-                  <div className="metric-value">
-                    {stats.pctNuls == null ? 'Données non disponibles' : <>Nuls / votants : <strong>{stats.pctNuls.toFixed(2)}%</strong></>}
-                  </div>
-                </div>
+            <div className="metric-card">
+              <div className="metric-head">
+                <span className="metric-emoji">⚫</span>
+                <span className="metric-title">% de nuls</span>
+              </div>
+              <div className="metric-value">
+                {stats.pctNuls == null ? 'Données non disponibles' : <>Nuls / votants : <strong>{stats.pctNuls.toFixed(2)}%</strong></>}
+              </div>
+            </div>
               </>
             )}
+
           </div>
         )}
       </div>

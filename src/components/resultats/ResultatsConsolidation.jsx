@@ -310,7 +310,7 @@ const ResultatsConsolidation = ({ electionState}) => {
             )}
           </div>
         </div>
-        {(isBureau && (electionState.tourActuel === 2 || electionState.tourActuel === 1)) ? (
+        {(isBureau && electionState.tourActuel === 2) ? (
           <>
             {/* ===== BV — Tour 2 : 6 blocs (2 lignes) ===== */}
             <div className="stats-grid-3">
@@ -579,11 +579,9 @@ const ResultatsConsolidation = ({ electionState}) => {
               gap: 12,
               flexWrap: 'wrap',
               marginBottom: 10,
-              maxWidth: '100%',
-              minWidth: 0,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 0, maxWidth: '100%', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
               <div>
                 <div style={{ fontWeight: 900, fontSize: '1.1rem', lineHeight: 1.1, color: '#0f172a' }}>
                   🏆 Résultats par candidat {isBureau ? '(votre bureau)' : ''}
@@ -603,16 +601,6 @@ const ResultatsConsolidation = ({ electionState}) => {
                         border: '1px solid rgba(15, 23, 42, 0.12)',
                         boxShadow: '0 8px 14px rgba(2, 6, 23, 0.06)',
                         whiteSpace: 'nowrap',
-                  maxWidth: '100%',
-                  minWidth: 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  flex: '0 1 auto',
-                        maxWidth: '100%',
-                        minWidth: 0,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        flex: '1 1 auto',
                       }}
                     >
                       🗳️ Tour {electionState.tourActuel}   📋 Les 2 listes qualifiées
@@ -629,8 +617,6 @@ const ResultatsConsolidation = ({ electionState}) => {
                 gap: 10,
                 flexWrap: 'wrap',
                 justifyContent: 'flex-end',
-                maxWidth: '100%',
-                minWidth: 0,
               }}
             >
               <span style={{ fontWeight: 800, color: 'rgba(15,23,42,0.75)' }}>Suffrages exprimés</span>
@@ -673,15 +659,16 @@ const ResultatsConsolidation = ({ electionState}) => {
                         borderRadius: 16,
                         padding: '10px 22px',
                         background: 'rgba(255,255,255,0.92)',
-                        border: `2px solid ${isQualifie ? color : 'rgba(15, 23, 42, 0.10)'}`,
-                        boxShadow: '0 10px 18px rgba(2, 6, 23, 0.08)',
                         width: '100%',
                         maxWidth: '100%',
                         boxSizing: 'border-box',
+                        minWidth: 0,
+                        border: `2px solid ${isQualifie ? color : 'rgba(15, 23, 42, 0.10)'}`,
+                        boxShadow: '0 10px 18px rgba(2, 6, 23, 0.08)',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: '1 1 260px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: '1 1 0' }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <span

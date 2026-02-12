@@ -16,11 +16,12 @@ const normalizeBureauId = (value) => {
   return m ? m[1] : s;
 };
 
-export default function ResultatsSaisieBureau() {
+export default function ResultatsSaisieBureau({ electionState: electionStateProp } = {}) {
   const auth = useMemo(() => getAuthState(), []);
   const forcedBureauId = isBV(auth) ? String(auth.bureauId) : null;
 
-  const { state: electionState } = useElectionState();
+  const { state: electionStateHook } = useElectionState();
+  const electionState = electionStateProp || electionStateHook;
   const tourActuel = electionState?.tourActuel === 2 ? 2 : 1;
   const resultatsSheet = tourActuel === 2 ? 'Resultats_T2' : 'Resultats_T1';
 
@@ -122,7 +123,7 @@ export default function ResultatsSaisieBureau() {
     const votants = coerceInt(inputsMain.votants);
     const blancs = coerceInt(inputsMain.blancs);
     const nuls = coerceInt(inputsMain.nuls);
-    const exprimes = Math.max(0, votants - blancs - nuls);
+    const exprimes = coerceInt(inputsMain.exprimes);
 
     return {
       bureauId: selectedBureauId,
@@ -181,12 +182,55 @@ export default function ResultatsSaisieBureau() {
 
   const loading = loadingResultats;
 
-  const exprimesSafe = useMemo(() => {
-    const v = coerceInt(inputsMain.votants);
-    const b = coerceInt(inputsMain.blancs);
-    const n = coerceInt(inputsMain.nuls);
-    return Math.max(0, v - b - n);
-  }, [inputsMain]);
+
+  const bureauMeta = useMemo(() => {
+    const list = Array.isArray(bureaux) ? bureaux : [];
+    const normalized = normalizeBureauId(selectedBureauId);
+    const b = list.find((x) => normalizeBureauId(x?.id ?? '') === normalized) || null;
+    if (!b) return { nom: selectedBureauId || '—', president: '—', secretaire: '—' };
+
+    const nom = String(b?.nom ?? b?.libelle ?? b?.bureau ?? b?.id ?? selectedBureauId ?? '—');
+
+    const president =
+      String(
+        b?.president ??
+          b?.nomPresident ??
+          b?.presidentNom ??
+          b?.president_prenomNom ??
+          b?.pres ??
+          ''
+      ).trim() || '—';
+
+    const secretaire =
+      String(
+        b?.secretaire ??
+          b?.nomSecretaire ??
+          b?.secretaireNom ??
+          b?.secret ??
+          ''
+      ).trim() || '—';
+
+    return { nom, president, secretaire };
+  }, [bureaux, selectedBureauId]);
+
+  const controles = useMemo(() => {
+    const votants = coerceInt(inputsMain.votants);
+    const blancs = coerceInt(inputsMain.blancs);
+    const nuls = coerceInt(inputsMain.nuls);
+    const exprimes = coerceInt(inputsMain.exprimes);
+
+    const ctrl1Ok = votants === (blancs + nuls + exprimes);
+
+    let sommeVoix = 0;
+    for (const c of candidatsActifs) {
+      const key = String(c?.listeId ?? '').trim();
+      if (!key) continue;
+      sommeVoix += coerceInt(inputsVoix[key]);
+    }
+    const ctrl2Ok = sommeVoix === exprimes;
+
+    return { votants, blancs, nuls, exprimes, sommeVoix, ctrl1Ok, ctrl2Ok };
+  }, [candidatsActifs, inputsMain, inputsVoix]);
 
   return (
     <div style={{ marginTop: 20 }}>
@@ -379,12 +423,67 @@ export default function ResultatsSaisieBureau() {
               <input
                 type="text"
                 inputMode="numeric"
-                value={exprimesSafe}
+                value={inputsMain.exprimes}
                 readOnly
                 disabled
                 style={{ width: '100%', padding: 6, background: '#f0f0f0', cursor: 'not-allowed', fontWeight: 700 }}
-                title="Exprimés calculés automatiquement (votants - blancs - nuls)"
+                title="Exprimés issus du Google Sheet (lecture seule)"
               />
+            </div>
+          </div>
+
+
+          {/* Infos bureau + contrôles (BV et ADMIN, écran + responsive) */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, margin: '0 0 14px' }}>
+            <div style={{
+              flex: '1 1 320px',
+              background: '#dbeafe',
+              border: '1px solid #bfdbfe',
+              borderRadius: 10,
+              padding: 10
+            }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>ℹ️ Infos bureau</div>
+              <div style={{ fontSize: 14, lineHeight: 1.35 }}>
+                <div><strong>Bureau :</strong> {bureauMeta.nom}</div>
+                <div><strong>Président :</strong> {bureauMeta.president}</div>
+                <div><strong>Secrétaire :</strong> {bureauMeta.secretaire}</div>
+              </div>
+            </div>
+
+            <div style={{
+              flex: '1 1 320px',
+              background: controles.ctrl1Ok ? '#dcfce7' : '#fee2e2',
+              border: `1px solid ${controles.ctrl1Ok ? '#86efac' : '#fca5a5'}`,
+              borderRadius: 10,
+              padding: 10
+            }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>✅ Contrôle</div>
+              <div style={{ fontSize: 14, lineHeight: 1.35 }}>
+                Votants = Blancs + Nuls + Exprimés<br />
+                <strong>{controles.votants.toLocaleString('fr-FR')}</strong>
+                {' = '}
+                {controles.blancs.toLocaleString('fr-FR')}
+                {' + '}
+                {controles.nuls.toLocaleString('fr-FR')}
+                {' + '}
+                {controles.exprimes.toLocaleString('fr-FR')}
+              </div>
+            </div>
+
+            <div style={{
+              flex: '1 1 320px',
+              background: controles.ctrl2Ok ? '#dcfce7' : '#fee2e2',
+              border: `1px solid ${controles.ctrl2Ok ? '#86efac' : '#fca5a5'}`,
+              borderRadius: 10,
+              padding: 10
+            }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>✅ Contrôle</div>
+              <div style={{ fontSize: 14, lineHeight: 1.35 }}>
+                Somme des voix = Exprimés<br />
+                <strong>{controles.sommeVoix.toLocaleString('fr-FR')}</strong>
+                {' = '}
+                {controles.exprimes.toLocaleString('fr-FR')}
+              </div>
             </div>
           </div>
 

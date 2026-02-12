@@ -260,7 +260,7 @@ export default function App() {
             {renderAuthGate()}
             {isAuthenticated && (
               <>
-                <ResultatsSaisieBureau />
+                <ResultatsSaisieBureau electionState={safeElectionState} />
                 <ResultatsConsolidation electionState={safeElectionState} />
                 {/* ⚠️ CORRECTION : Masquer Validation et Classement pour les BV */}
                 {!isBureauVote && (

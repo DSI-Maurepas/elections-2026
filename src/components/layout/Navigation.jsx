@@ -186,15 +186,15 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
           </div>
 
           <div className="info-block info-block--auth">
-            <div className="info-label">Google</div>
+            <div className="info-label">Base de données</div>
             <div className="info-value">
-              {isAuthenticated ? "Connecté" : "Non connecté"}
+              {isAuthenticated ? "Connecté 🟢" : "Non connecté 🔴"}
             </div>
           </div>
 
           <div className="info-block info-block--access">
-            <div className="info-label">Accès</div>
-            <div className="info-value">{accessAuth?.role || "—"}{accessAuth?.role === "BV" ? ` (BV${accessAuth?.bureauId})` : ""}</div>
+            <div className="info-label">Session</div>
+            <div className="info-value">{accessAuth?.role || "—"}{accessAuth?.role === "BV" ? ` (🗳️ BV${accessAuth?.bureauId})` : ""}</div>
           </div>
         </div>
       </div>

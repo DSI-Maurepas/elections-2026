@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import useGoogleSheets from '../../hooks/useGoogleSheets';
+import { getAuthState, isBV } from '../../services/authService';
 
 const COLORS = ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#ef4444', '#14b8a6', '#f59e0b'];
 
@@ -28,7 +29,12 @@ const getCandidateId = (c, idx) => {
   return `L${idx + 1}`;
 };
 
-const ResultatsClassement = ({ electionState}) => {
+const ResultatsClassement = ({ electionState }) => {
+  // Profil (Admin vs BV) : on n'affiche le bloc "Classement officiel - Tour 1" que pour l'ADMIN
+  // ⚠️ Ne modifie pas les données : affichage uniquement
+  const auth = useMemo(() => getAuthState(), []);
+  const isBureau = isBV(auth);
+
   const tourActuel = electionState?.tourActuel || 1;
 
   // Deux appels séparés à useGoogleSheets (pattern standard)
@@ -73,9 +79,8 @@ const ResultatsClassement = ({ electionState}) => {
   const top2 = classement.slice(0, 2); // Seulement les 2 qualifiés
   const others = classement.slice(2);  // Tous les éliminés (à partir du 3ème)
 
-  return (
-    <section className="resultats-section">
-
+  const classementContent = (
+    <>
       {/* Top 2 qualifiés uniquement */}
       <div className="top3-grid">
         {top2.map((candidat, index) => {
@@ -104,7 +109,7 @@ const ResultatsClassement = ({ electionState}) => {
                 <div className="top3-pct">{candidat.pct.toFixed(2)}%</div>
                 {/* Barre de progression proportionnelle au % */}
                 <div className="top3-progress-container">
-                  <div className="top3-progress-fill" style={{ width: `${candidat.pct}%`, backgroundColor: color }}></div>
+                  <div className="top3-progress-fill" style={{ width: `${candidat.pct}%`, backgroundColor: color }} />
                 </div>
               </div>
             </div>
@@ -123,27 +128,61 @@ const ResultatsClassement = ({ electionState}) => {
               <div key={`${candidat.id}-${rank}`} className="classement-item-compact">
                 {/* Numéro dans un cercle grisé */}
                 <div className="classement-rank-circle" style={{ color }}>{rank}</div>
-                
+
                 {/* Nom du candidat */}
                 <div className="classement-name">{candidat.name}</div>
-                
+
                 {/* Voix */}
                 <div className="classement-voix">{candidat.totalVoix.toLocaleString('fr-FR')}</div>
-                
+
                 {/* Pourcentage */}
                 <div className="classement-pct">{candidat.pct.toFixed(2)}%</div>
-                
+
                 {/* Badge ÉLIMINÉ */}
                 <span className="badge eliminated-compact">⛔ ÉLIMINÉ</span>
-                
+
                 {/* Barre de progression proportionnelle */}
                 <div className="classement-progress-container">
-                  <div className="classement-progress-fill" style={{ width: `${candidat.pct}%`, backgroundColor: color }}></div>
+                  <div className="classement-progress-fill" style={{ width: `${candidat.pct}%`, backgroundColor: color }} />
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+    </>
+  );
+
+  const shouldShowOfficialWrap = !isBureau && tourActuel === 1;
+
+  return (
+    <section className="resultats-section">
+      {shouldShowOfficialWrap ? (
+        <div
+          className="resultats-card classement-officiel"
+          style={{
+            background: '#ffffff',
+            borderRadius: 14,
+            boxShadow: '0 6px 18px rgba(0,0,0,0.10)',
+            padding: 16,
+            border: '1px solid rgba(0,0,0,0.06)',
+            marginBottom: 16,
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.2 }}>
+              🏆 Classement officiel - Tour 1
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 700, opacity: 0.85 }}>
+              Total des suffrages exprimés : {totalExprimes.toLocaleString('fr-FR')}
+            </div>
+          </div>
+
+          {/* Encapsule TOUTES les listes (Top 2 + autres) */}
+          <div className="resultats-card-body">{classementContent}</div>
+        </div>
+      ) : (
+        classementContent
       )}
     </section>
   );

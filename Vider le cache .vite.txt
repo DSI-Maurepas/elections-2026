@@ -1,0 +1,5 @@
+# Supprimer le cache Vite (souvent la vraie cause d'un ralentissement soudain)
+rm -rf node_modules/.vite
+
+# Puis relancer
+npm run dev
