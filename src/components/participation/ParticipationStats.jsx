@@ -390,7 +390,7 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
                 <span className="metric-title">Plus forte progression (votants)</span>
               </div>
               <div className="metric-value">
-                {chiffresCles.maxProg.bureauLabel} — {chiffresCles.maxProg.heureDebut}→{chiffresCles.maxProg.heureFin} :
+                {!isBureauVote && <>{chiffresCles.maxProg.bureauLabel} — </>}{chiffresCles.maxProg.heureDebut}→{chiffresCles.maxProg.heureFin} :
                 <strong> +{chiffresCles.maxProg.delta.toLocaleString('fr-FR')}</strong>
               </div>
               <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.maxProg.delta > 0 ? 100 : 0))}%` }} /></div>
@@ -402,7 +402,7 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
                 <span className="metric-title">Moins forte progression (votants)</span>
               </div>
               <div className="metric-value">
-                {chiffresCles.minProg.bureauLabel} — {chiffresCles.minProg.heureDebut}→{chiffresCles.minProg.heureFin} :
+                {!isBureauVote && <>{chiffresCles.minProg.bureauLabel} — </>}{chiffresCles.minProg.heureDebut}→{chiffresCles.minProg.heureFin} :
                 <strong> +{chiffresCles.minProg.delta.toLocaleString('fr-FR')}</strong>
               </div>
               <div className="mini-bar" aria-hidden="true"><div className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, chiffresCles.maxProg.delta > 0 ? (chiffresCles.minProg.delta / chiffresCles.maxProg.delta) * 100 : 0))}%` }} /></div>
@@ -467,52 +467,6 @@ const ParticipationStats = ({ electionState, isBureauVote = false }) => {
             </div>
             )}
 
-            <div className="metric-card">
-              <div className="metric-head">
-                <span className="metric-emoji">⏱️</span>
-                <span className="metric-title">Heure la plus chargée / la plus calme</span>
-              </div>
-              <div className="metric-value">
-                <strong>Chargée</strong> : {chiffresCles.heuresChargees.maxHeure.heureDebut}→{chiffresCles.heuresChargees.maxHeure.heureFin}
-                {' '}(<strong>+{chiffresCles.heuresChargees.maxHeure.delta.toLocaleString('fr-FR')}</strong>)<br />
-                <strong>Calme</strong> : {chiffresCles.heuresChargees.minHeure.heureDebut}→{chiffresCles.heuresChargees.minHeure.heureFin}
-                {' '}(<strong>+{chiffresCles.heuresChargees.minHeure.delta.toLocaleString('fr-FR')}</strong>)
-              </div>
-            </div>
-
-            {false && (
-<div className="metric-card">
-              <div className="metric-head">
-                <span className="metric-emoji">✅</span>
-                <span className="metric-title">% de votants (communal)</span>
-              </div>
-              <div className="metric-value">Taux communal : <strong>{stats.tauxParticipation.toFixed(2)}%</strong></div>
-            </div>
-            )}
-
-                        {isBureauVote && (
-              <>
-<div className="metric-card">
-              <div className="metric-head">
-                <span className="metric-emoji">⚪</span>
-                <span className="metric-title">% de blancs</span>
-              </div>
-              <div className="metric-value">
-                {stats.pctBlancs == null ? 'Données non disponibles' : <>Blancs / votants : <strong>{stats.pctBlancs.toFixed(2)}%</strong></>}
-              </div>
-            </div>
-
-            <div className="metric-card">
-              <div className="metric-head">
-                <span className="metric-emoji">⚫</span>
-                <span className="metric-title">% de nuls</span>
-              </div>
-              <div className="metric-value">
-                {stats.pctNuls == null ? 'Données non disponibles' : <>Nuls / votants : <strong>{stats.pctNuls.toFixed(2)}%</strong></>}
-              </div>
-            </div>
-              </>
-            )}
 
           </div>
         )}
