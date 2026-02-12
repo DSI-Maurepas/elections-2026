@@ -148,6 +148,46 @@ class GoogleSheetsService {
     return `'${safe}'!${localRange}`;
   }
 
+
+  /**
+   * Variante A1 pour les endpoints qui exigent la range dans l'URL path (ex: values/{range}:append|clear).
+   * Objectif: éviter les erreurs "Unable to parse range" observées avec des noms d'onglets quotés
+   * lorsqu'ils passent dans le path encodé. 
+   *
+   * Règle:
+   * - Si le nom d'onglet est "safe" (A-Z a-z 0-9 underscore) ET qu'on nous passe un nom d'onglet simple,
+   *   on génère sans quotes: SheetName!A:Z
+   * - Sinon, on retombe sur a1() (quotée, robuste espaces/accents).
+   *
+   * NB: Ne modifie pas la logique de normalizeSheetName.
+   */
+  a1Path(sheetOrA1, range = 'A:Z') {
+    const input = String(sheetOrA1 || '').trim();
+
+    // Si l'appelant fournit déjà une A1 complète, on ne tente pas de "dé-quotage" agressif:
+    // on ne retire les quotes que si le nom d'onglet est "safe".
+    if (input.includes('!')) {
+      const idx = input.indexOf('!');
+      let sheetName = input.slice(0, idx);
+      const localRange = input.slice(idx + 1) || range;
+
+      if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
+        sheetName = sheetName.slice(1, -1).replace(/''/g, "'");
+      }
+      const safeName = String(this.normalizeSheetName(sheetName) || '');
+      if (/^[A-Za-z0-9_]+$/.test(safeName)) {
+        return `${safeName}!${localRange}`;
+      }
+      return this.a1(sheetName, localRange);
+    }
+
+    const safeName = String(this.normalizeSheetName(input) || '');
+    if (/^[A-Za-z0-9_]+$/.test(safeName)) {
+      return `${safeName}!${range}`;
+    }
+    return this.a1(input, range);
+  }
+
   
   /**
    * Normalise les noms d'onglets pour éviter les régressions (accents/variantes).
@@ -428,6 +468,15 @@ async sleep(ms) {
           eligible: String(_str(row, 'Eligible', 5, 'FALSE')).trim().toUpperCase() === 'TRUE'
         }));
 default:
+        // AuditLog : colonnes A timestamp | B user | C action | D details
+        if (sheetName === 'AuditLog') {
+          return rows.map(row => ({
+            timestamp: row[0] || '',
+            user: row[1] || '',
+            action: row[2] || '',
+            details: row[3] || ''
+          }));
+        }
         // Par défaut, retourner les lignes brutes
         return rows;
     }
@@ -576,7 +625,7 @@ this._setCached(key, filtered);
       throw new Error('Accès refusé : suppression interdite pour un bureau de vote');
     }
     const sheetRow = Number(rowIndex) + 2;
-    const a1 = this.a1(normalizedSheet, `A${sheetRow}:Z${sheetRow}`);
+    const a1 = this.a1Path(normalizedSheet, `A${sheetRow}:Z${sheetRow}`);
 
     this._cache.clear();
 
@@ -922,7 +971,7 @@ async updateElectionState(keyOrObject, value) {
 
   async appendRows(sheetName, rows) {
     const normalizedSheet = this.normalizeSheetName(sheetName);
-    const a1 = this.a1(normalizedSheet, 'A:Z');
+    const a1 = this.a1Path(normalizedSheet, 'A:Z');
     this._cache.clear();
 
     // ici on garde /values/{range}:append (fonctionne bien car range simple A:Z, même si onglet accentué)
@@ -934,7 +983,7 @@ async updateElectionState(keyOrObject, value) {
 
   async clearSheet(sheetName) {
     const normalizedSheet = this.normalizeSheetName(sheetName);
-    const a1 = this.a1(normalizedSheet, 'A:Z');
+    const a1 = this.a1Path(normalizedSheet, 'A:Z');
     this._cache.clear();
     return await this.makeRequest(`/values/${encodeURIComponent(a1)}:clear`, { method: 'POST' });
   }

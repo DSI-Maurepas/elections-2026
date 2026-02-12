@@ -151,7 +151,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
     }
 
     try {
-      await auditService.logAction?.('RESULTATS_SAISIE', {
+      await auditService.log?.('RESULTATS_SAISIE', {
         tour: tourActuel,
         bureauId: selectedBureauId,
         champ: fieldLabelForAudit || 'SAVE',

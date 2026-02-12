@@ -243,7 +243,8 @@ export const useElectionState = () => {
       }
 
       try {
-        await auditService.log('PASSAGE_T2', 'ELECTION', 'STATE', {}, {
+        await auditService.log('PASSAGE_T2', {
+          entity: 'ELECTION_STATE',
           candidats: candidats.map((c) => c?.nom || c?.nomListe || c?.listeId || c?.id),
         });
       } catch (e) {
@@ -315,7 +316,8 @@ export const useElectionState = () => {
       }
 
       try {
-        await auditService.log('RETOUR_T1', 'ELECTION', 'STATE', {}, {
+        await auditService.log('RETOUR_T1', {
+          entity: 'ELECTION_STATE',
           tourActuel: 1,
         });
       } catch (e) {
@@ -338,7 +340,7 @@ export const useElectionState = () => {
 
       await googleSheetsService.updateElectionState({ [field]: true });
 
-      await auditService.log('VERROUILLAGE', 'ELECTION', 'STATE', {}, { tour });
+      await auditService.log('VERROUILLAGE', { entity: 'ELECTION_STATE', tour });
 
       await loadState();
     } catch (error) {
@@ -356,7 +358,7 @@ export const useElectionState = () => {
 
       await googleSheetsService.updateElectionState({ [field]: false });
 
-      await auditService.log('DEVERROUILLAGE', 'ELECTION', 'STATE', {}, { tour });
+      await auditService.log('DEVERROUILLAGE', { entity: 'ELECTION_STATE', tour });
 
       await loadState();
     } catch (error) {
