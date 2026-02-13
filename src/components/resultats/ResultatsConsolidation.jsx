@@ -11,7 +11,7 @@ const normalizeBureauId = (value) => {
   const m = s.match(/(\d+)/);
   return m ? m[1] : s;
 };
-
+	
 /**
  * Consolidation des résultats
  * 
@@ -375,7 +375,7 @@ const ResultatsConsolidation = ({ electionState}) => {
 
   const ecartLabel = useMemo(() => {
     if (!top1 || !top2) return 'N/A';
-    return `${getCandidateDisplayName(top1)} vs ${getCandidateDisplayName(top2)}`;
+    return `${getCandidateDisplayName(top1)} VS ${getCandidateDisplayName(top2)}`;
   }, [top1, top2]);
 
   return (
@@ -505,9 +505,9 @@ const ResultatsConsolidation = ({ electionState}) => {
             background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.11) 0%, rgba(192, 132, 252, 0.07) 100%)'
           }}>
             <div className="stats-card-label">
-              📈 Écart 1er / 2ème
+              📈 Écart entre la 1ère et la 2nde liste
             </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
               <div className="stats-card-value">
                 {ecartVoix !== null ? ecartVoix.toLocaleString('fr-FR') : 'N/A'} voix
               </div>
@@ -688,9 +688,9 @@ const ResultatsConsolidation = ({ electionState}) => {
             background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.11) 0%, rgba(192, 132, 252, 0.07) 100%)'
           }}>
             <div className="stats-card-label">
-              📈 Écart 1er / 2ème
+              📈 Écart entre la 1ère et la 2nde liste
             </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
               <div className="stats-card-value">
                 {ecartVoix !== null ? ecartVoix.toLocaleString('fr-FR') : 'N/A'} voix
               </div>

@@ -6,6 +6,9 @@ import { useElectionState } from '../../hooks/useElectionState';
 const SiegesCommunautaire = ({ electionState }) => {
   const { state } = useElectionState();
 
+  // Configuration : nombre de sièges CC
+  const { data: config } = useGoogleSheets('Config');
+
   // Source prioritaire : tableau Google Sheets (voix municipales consolidées par liste)
   const { data: seatsCommunity } = useGoogleSheets('Seats_Community');
 
@@ -14,8 +17,23 @@ const SiegesCommunautaire = ({ electionState }) => {
   const { data: resultats } = useGoogleSheets(state.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2');
 
   const [sieges, setSieges] = useState([]);
-  // Maurepas / SQY : total à ajuster si nécessaire. Ici 6 (attendu 5/1 sur ton cas).
-  const [totalSieges, setTotalSieges] = useState(6);
+  const [totalSieges, setTotalSieges] = useState(6); // Valeur par défaut
+
+  // Lecture du nombre de sièges CC depuis Config
+  useEffect(() => {
+    if (!config || config.length === 0) return;
+    
+    const seatsCCRow = config.find(row => 
+      (row.parametre || row.Parametre || row.key || row.Key || '') === 'SEATS_COMMUNITY_TOTAL'
+    );
+    
+    if (seatsCCRow) {
+      const value = Number(seatsCCRow.valeur || seatsCCRow.Valeur || seatsCCRow.value || seatsCCRow.Value || 6);
+      if (value > 0) {
+        setTotalSieges(value);
+      }
+    }
+  }, [config]);
 
   const seatsCommunityRows = useMemo(() => {
     return (seatsCommunity || [])

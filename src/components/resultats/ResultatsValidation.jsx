@@ -227,7 +227,7 @@ const ResultatsValidation = ({ electionState}) => {
         <div className="banner-icon">{bannerIcon}</div>
         <div className="banner-content">
           <div className="banner-title">
-            {allValid ? 'Tous les résultats sont validés 🟢' : stats.errorCount > 0 ? 'Erreurs à corriger   ⮕' : 'Validation requise 🟠'}
+            {allValid ? 'Tous les résultats sont validés 🟢' : stats.errorCount > 0 ? 'ERREURS A CORRIGER !   ⮕' : 'Validation requise 🟠'}
           <span className="validation-info-buttons" style={{ display: 'inline-flex', alignItems: 'center', gap: '12px', marginLeft: '12px' }}>
             <button
               type="button"

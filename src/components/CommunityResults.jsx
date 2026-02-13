@@ -25,7 +25,7 @@ const CommunityResults = ({ consolidatedData, config }) => {
               <td>{list.name}</td>
               <td>{list.leader}</td>
               <td>{list.votes.toLocaleString()}</td>
-              <td>{((list.votes / config.totalVotes) * 100).toFixed(2)} %</td>
+			  <td>{((list.votes / config.totalVotes) * 100).toFixed(2)} %</td>
               <td className="seat-count"><strong>{list.communitySeats}</strong></td>
             </tr>
           ))}

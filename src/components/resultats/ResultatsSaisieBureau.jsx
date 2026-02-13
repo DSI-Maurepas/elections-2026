@@ -489,12 +489,12 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
 
           {/* Tableau voix */}
           <div className="resultats-voix-box"><div className="resultats-voix-scroll">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Liste</th>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Tête de liste</th>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Voix</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '15%' }}>Liste</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '10%' }}>Voix</th>
+				<th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Tête de liste</th>
               </tr>
             </thead>
             <tbody>
@@ -506,8 +506,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
                 return (
                   <tr key={listeId || nomListe || Math.random().toString(16).slice(2)}>
                     <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>{listeId || '—'} {nomListe ? `— ${nomListe}` : ''}</td>
-                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>{tete || '—'}</td>
-                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6, width: 160 }}>
+                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -517,6 +516,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
                         style={{ width: '100%', padding: 6 }}
                       />
                     </td>
+                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>{tete || '—'}</td>
                   </tr>
                 );
               })}

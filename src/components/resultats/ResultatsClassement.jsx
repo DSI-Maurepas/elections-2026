@@ -76,17 +76,25 @@ const ResultatsClassement = ({ electionState }) => {
     return sorted;
   }, [candidatsArray, resultats, totalExprimes]);
 
-  const top2 = classement.slice(0, 2); // Seulement les 2 qualifiés
-  const others = classement.slice(2);  // Tous les éliminés (à partir du 3ème)
+  const SEUIL_QUALIFICATION = 10; // 10% des suffrages exprimés pour se maintenir au 2nd tour
+  
+  // Candidats qualifiés : tous ceux qui atteignent >= 10%
+  const qualifies = classement.filter(c => c.pct >= SEUIL_QUALIFICATION);
+  
+  // Si moins de 2 listes atteignent 10%, on prend les 2 premières (règle de repli)
+  const top2OrQualifies = qualifies.length >= 2 ? qualifies : classement.slice(0, 2);
+  
+  // Les autres (éliminés) : tous ceux qui ne sont pas qualifiés
+  const others = classement.filter(c => !top2OrQualifies.includes(c));
 
   const classementContent = (
     <>
-      {/* Top 2 qualifiés uniquement */}
+      {/* Candidats qualifiés (>= 10% ou top 2 si moins de 2 atteignent 10%) */}
       <div className="top3-grid">
-        {top2.map((candidat, index) => {
-          const rank = index + 1;
+        {top2OrQualifies.map((candidat, index) => {
+          const rank = classement.findIndex(c => c.id === candidat.id) + 1;
           const color = COLORS[(rank - 1) % COLORS.length];
-          const isQualifie = rank <= 2;
+          const isQualifie = candidat.pct >= SEUIL_QUALIFICATION || rank <= 2;
           return (
             <div
               key={`${candidat.id}-${rank}`}
@@ -121,8 +129,8 @@ const ResultatsClassement = ({ electionState }) => {
       {others.length > 0 && (
         <div className="classement-list">
           <div className="classement-subtitle">Autres candidats</div>
-          {others.map((candidat, idx) => {
-            const rank = idx + 3; // Commence au rang 3 (3ème, 4ème, 5ème...)
+          {others.map((candidat) => {
+            const rank = classement.findIndex(c => c.id === candidat.id) + 1;
             const color = COLORS[(rank - 1) % COLORS.length];
             return (
               <div key={`${candidat.id}-${rank}`} className="classement-item-compact">
