@@ -559,7 +559,7 @@ const PassageSecondTour = ({
         </div>
       </div>
 
-      {/* Tableau arrondi + 2 qualifiés en vert */}
+      {/* Tableau arrondi + candidats qualifiés (≥ 10%) en vert */}
       <div style={{ ...styles.card, padding: 14, marginBottom: 16 }}>
         <div style={styles.tableWrap}>
           <table style={styles.table}>
@@ -574,7 +574,8 @@ const PassageSecondTour = ({
             </thead>
             <tbody>
               {classement.map((c, index) => {
-                const isQualified = index < 2;
+                // Un candidat est qualifié s'il a >= 10% des suffrages exprimés
+                const isQualified = (c.pourcentage || 0) >= 10;
                 const pctBar = maxVoix > 0 ? ((c?.voix || 0) / maxVoix) * 100 : 0;
 
                 return (
