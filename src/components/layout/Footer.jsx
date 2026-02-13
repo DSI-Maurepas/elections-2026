@@ -50,7 +50,6 @@ const Footer = () => {
             Toutes les actions sont tracées<br />
             Audit complet disponible<br />
             Données sécurisées<br />
-			Validation - Consolidation
           </p>
         </div>
 
@@ -58,7 +57,6 @@ const Footer = () => {
           <h4>ℹ️ Informations</h4>
           <p>
             Version 4.6.7<br />
-            13 bureaux de vote configurés<br />
             Premier tour : 15 mars 2026<br />
             Second tour : 22 mars 2026
           </p>

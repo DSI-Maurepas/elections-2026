@@ -5,7 +5,14 @@
 import { generateFilename, formatDateTime, formatNumber, formatPercent } from '../utils/formatters';
 import { ELECTION_CONFIG, SHEET_NAMES } from '../utils/constants';
 import auditService from './auditService';
-import * as XLSX from 'xlsx';
+// ⚡ Import dynamique : xlsx (~2 Mo) n'est chargé qu'au premier export
+let _XLSX = null;
+async function getXLSX() {
+  if (!_XLSX) {
+    _XLSX = await import('xlsx');
+  }
+  return _XLSX;
+}
 import googleSheetsService from './googleSheetsService';
 import calculService from './calculService';
 
@@ -103,8 +110,9 @@ case 'audit':
    * NOTE: on conserve le nom historique exportToCSV pour éviter de casser l'UI,
    * mais la sortie est bien un .xlsx.
    */
-  exportToCSV(data, filename) {
+  async exportToCSV(data, filename) {
     try {
+      const XLSX = await getXLSX();
       const safeFilename = (filename || 'export.xlsx').replace(/\.csv$/i, '.xlsx');
 
       const rows = Array.isArray(data) ? data : [];
@@ -194,7 +202,14 @@ case 'audit':
       return h ? getVotantsForHour(obj, h) : 0;
     };
 
-    const data = (Array.isArray(participation) ? participation : []).map((p) => {
+    const data = (Array.isArray(participation) ? participation : [])
+      // ⚡ Exclure les lignes fantômes (bureau vide ou 0 inscrit)
+      .filter((p) => {
+        const bureau = p?.bureauId || p?.BureauID || p?.Bureau || p?.bureau || '';
+        const inscrits = getNumeric(p?.inscrits ?? p?.Inscrits);
+        return bureau !== '' && inscrits > 0;
+      })
+      .map((p) => {
       const bureau = p?.bureauId || p?.BureauID || p?.Bureau || p?.bureau || '';
       const inscrits = getNumeric(p?.inscrits ?? p?.Inscrits);
       const heure = getLastHour(p);
@@ -457,6 +472,7 @@ const data = (auditData || [])
    */
   async exportCompletCSV(tour = 1) {
     try {
+      const XLSX = await getXLSX();
       // ✅ Export complet : un seul fichier XLSX (plusieurs onglets)
       const bureaux = await googleSheetsService.getData(SHEET_NAMES.BUREAUX);
       const candidats = await googleSheetsService.getData(SHEET_NAMES.CANDIDATS);
@@ -647,7 +663,14 @@ const data = (auditData || [])
 
     const bureauxById = new Map((Array.isArray(bureaux) ? bureaux : []).map((b) => [b?.id ?? b?.ID ?? b?.bureauId ?? b?.BureauID, b]));
 
-    return (Array.isArray(participation) ? participation : []).map((p) => {
+    return (Array.isArray(participation) ? participation : [])
+      // ⚡ Exclure les lignes fantômes (bureau vide ou 0 inscrit)
+      .filter((p) => {
+        const bid = p?.bureauId ?? p?.BureauID ?? p?.Bureau ?? p?.bureau ?? '';
+        const ins = toNum(p?.inscrits ?? p?.Inscrits);
+        return bid !== '' && ins > 0;
+      })
+      .map((p) => {
       const bureauId = p?.bureauId ?? p?.BureauID ?? p?.Bureau ?? p?.bureau ?? '';
       const b = bureauxById.get(bureauId) || null;
 
@@ -955,7 +978,7 @@ const data = (auditData || [])
     printWindow.document.write(html);
     printWindow.document.close();
     
-    auditService.logExport('PARTICIPATION_PDF', `tour${tour}`, { lignes: participation.length });
+    auditService.logExport('PARTICIPATION_PDF', `tour${tour}`, { lignes: (Array.isArray(participation) ? participation : []).length });
   }
 
   /**
@@ -1008,11 +1031,18 @@ const data = (auditData || [])
       return last || '20h';
     };
 
+    // ⚡ Exclure les lignes fantômes (bureau vide ou 0 inscrit)
+    const validParticipation = (Array.isArray(participation) ? participation : []).filter((p) => {
+      const bureau = p?.bureauId || p?.BureauID || p?.Bureau || p?.bureau || '';
+      const inscrits = getNumeric(p?.inscrits ?? p?.Inscrits);
+      return bureau !== '' && inscrits > 0;
+    });
+
     // Calculer les totaux (sur la dernière heure disponible par bureau)
     let totalInscrits = 0;
     let totalVotants = 0;
 
-    (Array.isArray(participation) ? participation : []).forEach((p) => {
+    validParticipation.forEach((p) => {
       const inscrits = getNumeric(p?.inscrits);
       const lastHour = getLastHour(p);
       const votants = getVotantsForHour(p, lastHour);
@@ -1092,7 +1122,7 @@ const data = (auditData || [])
       <th>Votants</th>
       <th>Taux (%)</th>
     </tr>
-    ${(Array.isArray(participation) ? participation : []).map(p => {
+    ${validParticipation.map(p => {
       const inscrits = getNumeric(p?.inscrits);
       const heure = getLastHour(p);
       const votants = getVotantsForHour(p, heure);
@@ -1489,6 +1519,7 @@ const data = (auditData || [])
    * - 1 fichier, 1 ou 2 feuilles selon disponibilité
    */
   async exportSiegesXLSX(municipal = [], communautaire = [], tour = 1, options = {}) {
+    const XLSX = await getXLSX();
     const only = options?.only || 'all';
 
     const wb = XLSX.utils.book_new();
@@ -1664,7 +1695,8 @@ const data = (auditData || [])
   /**
    * Export XLSX côté client (Blob)
    */
-  exportToXLSX(workbook, filename) {
+  async exportToXLSX(workbook, filename) {
+    const XLSX = await getXLSX();
     const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     this.downloadBlob(blob, filename);

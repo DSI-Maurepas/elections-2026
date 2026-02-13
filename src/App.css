@@ -60,8 +60,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 h1 { font-size: var(--font-size-4xl); }
-h2 { font-size: var(--font-size-3xl); }
-h3 { font-size: var(--font-size-2xl); }
+h2 { font-size: 1.25rem; } /* Police uniforme */
+h3 { font-size: 1.25rem; } /* Police uniforme */
 h4 { font-size: var(--font-size-xl); }
 h5 { font-size: var(--font-size-lg); }
 h6 { font-size: var(--font-size-base); }
@@ -3389,271 +3389,60 @@ input:focus, select:focus, textarea:focus {
   height: 9px;
 }
 
-/* === FIXES NON-REGRESSION NAV + ADMIN (2026, menu, sticky) === */
+/* ========================================
+/* ========================================
+   LAYOUT BV : Participation côte à côte
+   ======================================== */
 
-/* Header title: 2026 en dessous + grand + largeur calée */
-.nav-header .app-title {
-  display: inline-grid !important;
-  grid-template-rows: auto auto !important;
-  justify-items: start !important;
-  align-items: start !important;
-  gap: 0.25rem !important;
-  color: #fff !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
+/* ========================================
+   LAYOUT BV : Participation côte à côte
+   ======================================== */
 
-.nav-header .app-title-main {
-  display: block !important;
-  color: #fff !important;
-}
-
-.nav-header .app-title-year {
-  display: block !important;
+/* Desktop : 2 colonnes côte à côte */
+.participation-bv-layout {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 24px !important;
+  margin-bottom: 24px !important;
   width: 100% !important;
-  color: #fff !important;
-  font-weight: 900 !important;
-  font-size: 64px !important;   /* taille "avant" (ajustable) */
-  line-height: 0.95 !important;
-  letter-spacing: 0.30em !important;
-  text-indent: 0.30em !important; /* pour centrer visuellement l'espacement */
+  align-items: start !important;
 }
 
-/* Menu: desktop = auto, mobile = mêmes largeurs (gérées en JSX) */
-.nav-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  align-items: flex-start; /* gauche (tu peux passer à center) */
+/* Forcer les composants enfants à respecter la grille */
+.participation-bv-layout > .participation-saisie,
+.participation-bv-layout > .participation-tableau {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  margin-bottom: 0 !important;
 }
 
-.nav-menu li {
-  width: auto;
+/* S'assurer que les composants internes ne débordent pas */
+.participation-bv-layout .participation-saisie > *,
+.participation-bv-layout .participation-tableau > * {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
 }
 
-.nav-menu .nav-item {
-  width: auto;             /* IMPORTANT : plus de full-width en écran */
-  max-width: 100%;
-}
-
-@media (max-width: 900px) {
-  .nav-menu {
-    align-items: center;   /* en mobile: centré (demande) */
-  }
-  .nav-menu .nav-item {
-    width: var(--nav-btn-w, auto); /* la largeur max est injectée par JSX */
+/* Responsive : Empiler les blocs sur mobile/tablette */
+@media (max-width: 1024px) {
+  .participation-bv-layout {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
   }
 }
 
-/* ADMIN/AUDIT: scroll horizontal + sticky 1ère colonne */
-.table-scroll {
-  overflow-x: auto !important;
-  -webkit-overflow-scrolling: touch;
-  width: 100%;
-  max-width: 100%;
+/* DEBUG : Ajouter une bordure visible pour vérifier le layout */
+.participation-bv-layout {
+  border: 2px dashed #4CAF50 !important;
+  padding: 8px !important;
 }
 
-.admin-table, .audit-table {
-  border-collapse: separate;
-  border-spacing: 0;
-  width: max-content;
-  min-width: 100%;
+.participation-bv-layout > .participation-saisie {
+  border: 2px solid #2196F3 !important;
 }
 
-.admin-table thead th,
-.audit-table thead th {
-  background: #9aa4b1 !important;
-  color: #ffffff !important;
-  font-weight: 800 !important;
-  white-space: nowrap;
+.participation-bv-layout > .participation-tableau {
+  border: 2px solid #FF9800 !important;
 }
-
-.admin-table tbody tr:nth-child(even) td,
-.audit-table tbody tr:nth-child(even) td {
-  background: rgba(0,0,0,0.04);
-}
-
-.sticky-col,
-.admin-table thead th:first-child,
-.admin-table tbody td:first-child,
-.audit-table thead th:first-child,
-.audit-table tbody td:first-child {
-  position: sticky !important;
-  left: 0 !important;
-  z-index: 5;
-  background: inherit;
-  box-shadow: 2px 0 6px rgba(0,0,0,0.10);
-}
-
-.admin-table thead th:first-child,
-.audit-table thead th:first-child {
-  z-index: 7;
-}
-
-
-/* =========================
-   UI Toasts + Confirm Modal
-   ========================= */
-.ui-toast-container{
-  position: fixed;
-  right: 16px;
-  top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 9999;
-}
-.ui-toast{
-  min-width: 260px;
-  max-width: 420px;
-  background: rgba(20, 28, 45, 0.92);
-  color: #fff;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 14px;
-  padding: 12px 14px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-  backdrop-filter: blur(8px);
-}
-.ui-toast-title{
-  font-weight: 800;
-  margin-bottom: 4px;
-}
-.ui-toast-message{
-  font-weight: 500;
-  opacity: 0.95;
-}
-.ui-toast.success{ border-left: 6px solid rgba(80, 200, 120, 0.95); }
-.ui-toast.error{ border-left: 6px solid rgba(255, 90, 90, 0.95); }
-.ui-toast.warn{ border-left: 6px solid rgba(255, 190, 70, 0.95); }
-.ui-toast.info{ border-left: 6px solid rgba(100, 160, 255, 0.95); }
-
-.ui-modal-backdrop{
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.45);
-  z-index: 9998;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-.ui-modal{
-  width: min(560px, 100%);
-  background: #0f172a;
-  color: #fff;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 14px 50px rgba(0,0,0,0.35);
-  padding: 16px 16px 14px 16px;
-}
-.ui-modal-title{
-  font-size: 18px;
-  font-weight: 900;
-  margin-bottom: 10px;
-}
-.ui-modal-message{
-  white-space: pre-line;
-  font-weight: 600;
-  opacity: 0.95;
-  margin-bottom: 14px;
-  line-height: 1.35;
-}
-.ui-modal-actions{
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-/* UI Confirm Modal - styles supplémentaires */
-.ui-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  animation: fadeIn 0.15s ease-out;
-}
-
-.ui-modal-content {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  max-width: 500px;
-  width: 90%;
-  max-height: 90vh;
-  overflow-y: auto;
-  animation: slideUp 0.2s ease-out;
-}
-
-.ui-modal-header {
-  padding: 24px 24px 16px 24px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-.ui-modal-header h3 {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #1a1a1a;
-}
-
-.ui-modal-body {
-  padding: 24px;
-}
-
-.ui-modal-body p {
-  margin: 0;
-  color: #4a4a4a;
-  line-height: 1.6;
-  font-size: 0.95rem;
-}
-
-.ui-modal-footer {
-  padding: 16px 24px 24px 24px;
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-}
-
-.ui-modal-footer button {
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 0.9rem;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s ease;
-}
-
-.ui-modal-footer button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Admin buttons text color */
-button { color: #000; }

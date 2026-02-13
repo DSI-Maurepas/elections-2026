@@ -1,50 +1,99 @@
 // src/App.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import authService from "./services/authService";
-import googleSheetsService from "./services/googleSheetsService";
-import auditService from "./services/auditService";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
+import authService, { loginWithCode, getAuthState, logoutAccess, isBV } from "./services/authService";
 import uiService from "./services/uiService";
 import { useElectionState } from "./hooks/useElectionState";
 
 import Navigation from "./components/layout/Navigation";
 import Footer from "./components/layout/Footer";
-import Dashboard from "./components/dashboard/Dashboard";
-import ParticipationSaisie from "./components/participation/ParticipationSaisie";
-import ParticipationTableau from "./components/participation/ParticipationTableau";
-import ParticipationStats from "./components/participation/ParticipationStats";
-import ResultatsSaisieBureau from "./components/resultats/ResultatsSaisieBureau";
-import ResultatsConsolidation from "./components/resultats/ResultatsConsolidation";
-import ResultatsValidation from "./components/resultats/ResultatsValidation";
-import ResultatsClassement from "./components/resultats/ResultatsClassement";
-import PassageSecondTour from "./components/secondTour/PassageSecondTour";
-import ConfigurationT2 from "./components/secondTour/ConfigurationT2";
-import SiegesMunicipal from "./components/sieges/SiegesMunicipal";
-import SiegesCommunautaire from "./components/sieges/SiegesCommunautaire";
-import ConfigBureaux from "./components/admin/ConfigBureaux";
-import ConfigCandidats from "./components/admin/ConfigCandidats";
-import AuditLog from "./components/admin/AuditLog";
-import ExportPDF from "./components/exports/ExportPDF";
-import ExportExcel from "./components/exports/ExportExcel";
-import { HashRouter } from "react-router-dom";
 
-import "./styles/App.css";
-import "./styles/variables.css";
-import "./styles/components/navigation.css";
-import "./styles/components/dashboard.css";
-import "./styles/components/components.css";
+// ⚡ Lazy loading : chaque page n'est chargée qu'à la navigation
+const Dashboard = React.lazy(() => import("./components/dashboard/Dashboard"));
+const ParticipationSaisie = React.lazy(() => import("./components/participation/ParticipationSaisie"));
+const ParticipationTableau = React.lazy(() => import("./components/participation/ParticipationTableau"));
+const ParticipationStats = React.lazy(() => import("./components/participation/ParticipationStats"));
+const ResultatsSaisieBureau = React.lazy(() => import("./components/resultats/ResultatsSaisieBureau"));
+const ResultatsConsolidation = React.lazy(() => import("./components/resultats/ResultatsConsolidation"));
+const ResultatsValidation = React.lazy(() => import("./components/resultats/ResultatsValidation"));
+const ResultatsClassement = React.lazy(() => import("./components/resultats/ResultatsClassement"));
+const PassageSecondTour = React.lazy(() => import("./components/secondTour/PassageSecondTour"));
+const ConfigurationT2 = React.lazy(() => import("./components/secondTour/ConfigurationT2"));
+const SiegesMunicipal = React.lazy(() => import("./components/sieges/SiegesMunicipal"));
+const SiegesCommunautaire = React.lazy(() => import("./components/sieges/SiegesCommunautaire"));
+const ConfigBureaux = React.lazy(() => import("./components/admin/ConfigBureaux"));
+const ConfigCandidats = React.lazy(() => import("./components/admin/ConfigCandidats"));
+const AuditLog = React.lazy(() => import("./components/admin/AuditLog"));
+const ExportPDF = React.lazy(() => import("./components/exports/ExportPDF"));
+const ExportExcel = React.lazy(() => import("./components/exports/ExportExcel"));
 
-function App() {
-  const [currentPage, setCurrentPage] = useState("dashboard");
-  const [authToken, setAuthToken] = useState(() => authService.getAccessToken());
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() =>
-    Boolean(authService.isAdminAuthenticated?.())
+import { canAccessPage } from "./config/authConfig";
+
+// CSS: tout est centralisé dans styles/App.css (chargé par main.jsx)
+
+function AccessGate({ onAuthenticated }) {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState(null);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const auth = loginWithCode(code);
+    if (!auth) {
+      setError("Code invalide");
+      return;
+    }
+    setError(null);
+    onAuthenticated(auth);
+  };
+
+  return (
+    <div style={{ padding: 40, maxWidth: 460, margin: "80px auto" }}>
+      <h2>Accès sécurisé</h2>
+      <p style={{ marginTop: 8, opacity: 0.85 }}>
+        Saisissez votre code d'accès. (Exemples : BV1, BV2, … ou admin.)
+      </p>
+      <form onSubmit={handleSubmit} style={{ marginTop: 16 }}>
+        <input
+          type="password"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="Code d'accès"
+          style={{ width: "100%", padding: 10, marginBottom: 10 }}
+          autoFocus
+        />
+        <button type="submit" style={{ width: "100%", padding: 10 }}>
+          Entrer
+        </button>
+        {error && <div style={{ color: "red", marginTop: 10 }}>{error}</div>}
+      </form>
+    </div>
   );
-  const [adminModalOpen, setAdminModalOpen] = useState(false);
-  // UI (toasts + confirm modal) — remplace les alert/confirm du navigateur
-  const [uiToasts, setUiToasts] = useState([]);
-  const [uiConfirm, setUiConfirm] = useState({ open: false, title: '', message: '', confirmText: 'Confirmer', cancelText: 'Annuler', _resolve: null });
+}
 
-  const showToast = ({ type = 'info', title = '', message = '', durationMs = 4000 }) => {
+export default function App() {
+  // ⚠️ IMPORTANT: Tous les hooks doivent être appelés à chaque rendu, sans return anticipé,
+  // sinon React déclenche "Rendered fewer hooks than expected" (ex: lors d'une déconnexion).
+
+  // Accès applicatif (BV / GLOBAL / ADMIN)
+  const [accessAuth, setAccessAuth] = useState(() => getAuthState());
+
+  // App V3 (navigation interne)
+  const [currentPage, setCurrentPage] = useState("dashboard");
+
+  // OAuth Google (token)
+  const [authToken, setAuthToken] = useState(() => authService.getAccessToken());
+
+  // UI (toasts + confirm modal)
+  const [uiToasts, setUiToasts] = useState([]);
+  const [uiConfirm, setUiConfirm] = useState({
+    open: false,
+    title: "",
+    message: "",
+    confirmText: "Confirmer",
+    cancelText: "Annuler",
+    _resolve: null,
+  });
+
+  const showToast = ({ type = "info", title = "", message = "", durationMs = 4000 }) => {
     const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
     setUiToasts((prev) => [...prev, { id, type, title, message }]);
     window.setTimeout(() => {
@@ -62,448 +111,348 @@ function App() {
     uiService.init({ showToast, showConfirm });
   }, []);
 
-  const [adminPassword, setAdminPassword] = useState("");
-  const [adminError, setAdminError] = useState(null);
-
-  // État global élection (SOURCE UNIQUE DE VÉRITÉ pour toute l'app)
-  // IMPORTANT: on expose aussi passerSecondTour pour éviter qu'une page instancie un second useElectionState
-  // (désynchronisations, besoin de rafraîchir, bascules qui "reviennent" après 0,5s, etc.)
+  // État global élection (source de vérité V3)
   const { state: electionState, loadState, passerSecondTour, revenirPremierTour } = useElectionState();
 
-  // Optionnel : si authService persiste le token, on le relit au montage
+  const safeElectionState = electionState || { tourActuel: 1, tour1Verrouille: false, tour2Verrouille: false };
+  
+  // Synchronisation OAuth au montage
   useEffect(() => {
     setAuthToken(authService.getAccessToken());
-    setIsAdminAuthenticated(Boolean(authService.isAdminAuthenticated?.()));
   }, []);
 
   const isAuthenticated = useMemo(() => Boolean(authToken), [authToken]);
 
-  const handleSignIn = async () => {
-    try {
-      await authService.signIn(); // authService gère lui-même le chargement GIS
-      setAuthToken(authService.getAccessToken());
-    } catch (e) {
-      console.error("Connexion Google échouée:", e);
+  // ⚠️ CORRECTION : Détecter si l'utilisateur est un BV
+  const isBureauVote = useMemo(() => isBV(accessAuth), [accessAuth]);
+
+  // --- Mapping page -> pageKey (utilisé pour la restriction d'accès) ---
+  const pageKeyFor = (page) => {
+    switch (page) {
+      case "participation":
+        return "participation_saisie";
+      case "resultats":
+        return "resultats_saisie_bureau";
+      case "passage-t2":
+        return "passage_second_tour";
+      case "admin":
+        return "admin_bureaux";
+      case "dashboard":
+      default:
+        return "dashboard";
     }
   };
 
-  const handleSignOut = async () => {
-    try {
-      await authService.signOut();
-    } catch (e) {
-      console.warn("Déconnexion: avertissement:", e);
-    } finally {
-      setAuthToken(null);
+  const navigateSafe = (page) => {
+    // Si pas d'accès applicatif (déconnexion), on ne navigue pas
+    if (!accessAuth) return;
+
+    const key = pageKeyFor(page);
+    if (!canAccessPage(accessAuth, key)) {
+      // BV : forcer Participation
+      if (accessAuth?.role === "BV") {
+        setCurrentPage("participation");
+      } else {
+        setCurrentPage("dashboard");
+      }
+      return;
+    }
+    setCurrentPage(page);
+  };
+
+  // Au changement d'accès: BV => participation, Global/Admin => dashboard
+  useEffect(() => {
+    if (!accessAuth) return;
+    if (accessAuth.role === "BV") {
+      setCurrentPage("participation");
+    } else {
       setCurrentPage("dashboard");
     }
-  };
+  }, [accessAuth]);
 
-  // Pages qui nécessitent un token OAuth
-  const authRequiredPages = new Set([
-    "participation",
-    "resultats",
-    "passage-t2",
-    "sieges",
-    "exports",
-    "admin",
-  ]);
-
+  // Bloque pages sensibles si non connecté OAuth
+  const authRequiredPages = new Set(["participation", "resultats", "passage-t2", "sieges", "exports", "admin"]);
   useEffect(() => {
     if (!isAuthenticated && authRequiredPages.has(currentPage)) {
       setCurrentPage("dashboard");
     }
   }, [isAuthenticated, currentPage]);
 
-  // Admin : modal mot de passe (en plus du token Google)
-  useEffect(() => {
-    if (currentPage !== "admin") {
-      setAdminModalOpen(false);
-      setAdminError(null);
-      setAdminPassword("");
-      return;
-    }
-
-    // Si l'utilisateur n'est pas connecté Google, on laisse renderAuthGate gérer.
-    if (!isAuthenticated) return;
-
-    if (!isAdminAuthenticated) {
-      setAdminModalOpen(true);
-    }
-  }, [currentPage, isAuthenticated, isAdminAuthenticated]);
-
-  // Quand on est en admin et authentifié, on recharge l'état élection (pour afficher le tour courant)
-  useEffect(() => {
-    if (currentPage === "admin" && isAuthenticated && isAdminAuthenticated) {
-      loadState?.();
-    }
-  }, [currentPage, isAuthenticated, isAdminAuthenticated, loadState]);
-
-  const handleAdminLogin = (evt) => {
-    evt?.preventDefault?.();
-    const ok = authService.adminSignIn(adminPassword);
-    if (!ok) {
-      setAdminError("Mot de passe invalide");
-      return;
-    }
-    setIsAdminAuthenticated(true);
-    setAdminError(null);
-    setAdminPassword("");
-    setAdminModalOpen(false);
-  };
-
-  const handleAdminLogout = () => {
-    authService.adminSignOut();
-    setIsAdminAuthenticated(false);
-    setAdminModalOpen(true);
-  };
-
-  // 🔄 Retour au 1er tour (admin uniquement) — non destructif (ne purge pas les feuilles T2)
-  const handleRetourPremierTour = async () => {
-    if (!isAuthenticated || !isAdminAuthenticated) return;
-
-    const confirm1 = await uiService.confirm({
-      title: "Retour au 1er tour",
-      message:
-        "Revenir au 1er tour ?\n\nCette action réinitialise l\'état global (tour actuel, verrous, candidats qualifiés).\n\nAucune feuille (résultats/participation) ne sera effacée.",
-      confirmText: "Continuer",
-      cancelText: "Annuler"
-    });
-    if (!confirm1) return;
-
-    const confirm2 = await uiService.confirm({
-      title: "Confirmation finale",
-      message:
-        "Confirmation finale :\n\n- tourActuel -> 1\n- passage T2 -> Inactif\n- verrous T1/T2 -> levés\n- candidats qualifiés -> vidés\n- ActifT2 -> FALSE (tous candidats)\n\nContinuer ?",
-      confirmText: "Oui, confirmer",
-      cancelText: "Annuler"
-    });
-    if (!confirm2) return;
-
+  const handleSignIn = async () => {
     try {
-      // Utilise la fonction du hook qui gère tout correctement
-      await revenirPremierTour();
-      uiService.toast('success', { message: "✅ Retour au 1er tour effectué." });
+      await authService.signIn();
+      setAuthToken(authService.getAccessToken());
     } catch (e) {
-      console.error("Erreur RETOUR_T1:", e);
-      uiService.toast('error', { message: `Erreur : ${e?.message || "Erreur inconnue"}` });
+      console.error("Connexion Google échouée:", e);
     }
   };
 
-  // 🟧/🟩 Activer/Désactiver le passage au 2nd tour (admin uniquement)
-  const handleSetSecondTourEnabled = async (enabled) => {
-    if (!isAuthenticated || !isAdminAuthenticated) return;
-
-    const label = enabled ? "ACTIVER" : "DÉSACTIVER";
-    const confirm1 = await uiService.confirm({
-      title: "Passage au 2nd tour",
-      message: `${label} le passage au 2nd tour ?
-
-Cette action n'exécute pas le passage au tour 2 : elle autorise ou bloque la confirmation dans 'Passage au 2nd tour'.`,
-      confirmText: label === "ACTIVER" ? "Activer" : "Désactiver",
-      cancelText: "Annuler"
-    });
-    if (!confirm1) return;
-
+  const handleSignOut = () => {
     try {
-      await googleSheetsService.updateElectionState({
-        secondTourEnabled: Boolean(enabled)
-      });
-
-      try {
-        await auditService.log("SECOND_TOUR_TOGGLE", {
-          enabled: Boolean(enabled),
-          from: electionState?.secondTourEnabled ?? null
-        });
-      } catch (e) {
-        console.warn("Audit SECOND_TOUR_TOGGLE échoué:", e);
-      }
-
-      await loadState?.();
-    } catch (e) {
-      console.error("Erreur toggle secondTourEnabled:", e);
-      uiService.toast('info', { message: `Erreur : ${e?.message || "Erreur inconnue"}` });
-}
-  };
-
-  // ====== Styles (inline) : largeur au contenu + cohérence visuelle ======
-  const styles = {
-    smallBtn: {
-      padding: "0.34rem 0.62rem",
-      borderRadius: 10,
-      fontWeight: 900,
-      fontSize: 13,
-      lineHeight: 1.1,
-      boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
-      border: "1px solid rgba(0,0,0,0.10)",
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      width: "fit-content"
-    },
-    btnDanger: {
-      background: "rgba(220, 38, 38, 0.14)",
-      border: "1px solid rgba(220, 38, 38, 0.60)"
-    },
-    btnSuccess: {
-      background: "rgba(34, 197, 94, 0.14)",
-      border: "1px solid rgba(34, 197, 94, 0.60)"
-    },
-    // Retour T1 = vert (comme le header 1er tour)
-    btnT1: {
-      background: "rgba(34, 197, 94, 0.14)",
-      border: "1px solid rgba(34, 197, 94, 0.75)"
-    },
-    // Retour T2 = orange (comme le header 2nd tour)
-    btnT2: {
-      background: "rgba(245, 158, 11, 0.16)",
-      border: "1px solid rgba(194, 120, 3, 0.85)"
-    },
-
-    // Tour 2 = bleu (charté T2)
-    btnT2Blue: {
-      background: "rgba(59, 130, 246, 0.14)",
-      border: "1px solid rgba(59, 130, 246, 0.75)"
-    },
-    sectionCard: {
-      marginBottom: "1rem",
-      padding: "1rem",
-      borderRadius: 14,
-      boxShadow: "0 10px 26px rgba(0,0,0,0.08)",
-      border: "1px solid rgba(0,0,0,0.06)"
-    },
-    chip: (tone) => {
-      const base = {
-        padding: "0.25rem 0.6rem",
-        borderRadius: 999,
-        fontWeight: 900,
-        fontSize: 13,
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6
-      };
-      if (tone === "green") return { ...base, background: "rgba(34, 197, 94, 0.12)", border: "1px solid rgba(34, 197, 94, 0.40)" };
-      if (tone === "red") return { ...base, background: "rgba(220, 38, 38, 0.12)", border: "1px solid rgba(220, 38, 38, 0.40)" };
-      return { ...base, background: "rgba(0,0,0,0.05)", border: "1px solid rgba(0,0,0,0.08)" };
-    },
-    duoBlock: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-      gap: 12,
-      padding: 12,
-      borderRadius: 14,
-      boxShadow: "0 10px 26px rgba(0,0,0,0.08)",
-      border: "1px solid rgba(0,0,0,0.06)",
-      background: "#fff",
-      marginBottom: "1rem"
-    },
-    panel: (bg) => ({
-      borderRadius: 14,
-      padding: 12,
-      border: "1px solid rgba(0,0,0,0.06)",
-      boxShadow: "0 8px 18px rgba(0,0,0,0.06)",
-      background: bg
-    }),
-    panelTitle: {
-      marginTop: 0,
-      marginBottom: 6,
-      fontSize: 16,
-      fontWeight: 900
-    },
-    panelText: {
-      marginTop: 0,
-      opacity: 0.9
+      authService.signOut();
+    } finally {
+      setAuthToken(null);
+      setCurrentPage("dashboard");
     }
   };
 
-  const renderAdminModal = () => {
-    if (!adminModalOpen) return null;
+  const handleAccessLogout = () => {
+    logoutAccess();
+    setAccessAuth(null);
+    setCurrentPage("dashboard");
+    // volontairement: on ne touche pas OAuth
+  };
 
-    // IMPORTANT : tourActuel doit être défini dans ce scope (sinon crash en Admin)
-    // On tolère plusieurs clés possibles dans ElectionsState et on sécurise en 1/2.
-    const tourActuelRaw =
-      electionState?.tourActuel ??
-      electionState?.currentTour ??
-      electionState?.tour ??
-      electionState?.tourActif ??
-      electionState?.activeTour ??
-      electionState?.round ??
-      electionState?.roundActive ??
-      electionState?.currentRound;
-
-    const tourActuel = Number(tourActuelRaw) === 2 ? 2 : 1;
+  const renderAuthGate = () => {
+    if (isAuthenticated) return null;
     return (
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="modal-backdrop"
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.55)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '1rem'
-        }}
-        onClick={() => {
-          setAdminModalOpen(false);
-          setCurrentPage('dashboard');
-        }}
-      >
-        <div
-          className="card"
-          style={{ maxWidth: 520, width: '100%', padding: '1rem', maxHeight: '90vh', overflowY: 'auto' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h2 style={{ marginTop: 0 }}>⚙️ Accès Administration</h2>
-          <p style={{ marginTop: 0 }}>
-            Saisissez le mot de passe pour accéder aux fonctions d'administration.
-          </p>
-
-          {adminError && (
-            <div className="message error" style={{ margin: '0.75rem 0' }}>
-              {adminError}
-            </div>
-          )}
-
-          <label style={{ display: 'block', marginBottom: '0.25rem' }}>
-            Mot de passe
-          </label>
-          <input
-            type="password"
-            value={adminPassword}
-            onChange={(e) => {
-              setAdminPassword(e.target.value);
-              if (adminError) setAdminError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleAdminLogin();
-              if (e.key === 'Escape') {
-                setAdminModalOpen(false);
-                setCurrentPage('dashboard');
-              }
-            }}
-            style={{ width: '100%', padding: '0.6rem', marginBottom: '0.75rem' }}
-            autoFocus
-          />
-
-          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              className="action-btn"
-              style={styles.smallBtn}
-              onClick={() => {
-                setAdminModalOpen(false);
-                setCurrentPage('dashboard');
-              }}
-            >
-              Annuler
-            </button>
-            <button
-              type="button"
-              className="action-btn"
-              style={{ ...styles.smallBtn, ...styles.btnSuccess }}
-              onClick={handleAdminLogin}
-            >
-              Connexion
-            </button>
-          </div>
-        </div>
-<div style={{ marginTop: 14, ...styles.panel("rgba(239, 68, 68, 0.10)") }}>
-  <h3 style={styles.panelTitle}>🚨 Bascule Tour (admin)</h3>
-  <p style={styles.panelText}>
-    Bascule <strong>uniquement</strong> le <strong>tour actif</strong> (sans recalcul / sans modifier les données).
-    À utiliser en dernier recours.
-  </p>
-
-  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-    <span style={styles.chip(tourActuel === 2 ? "green" : "red")}>
-      T2 : <strong>{tourActuel === 2 ? "Actif" : "Inactif"}</strong>
-    </span>
-    <span style={styles.chip(tourActuel === 1 ? "green" : "red")}>
-      T1 : <strong>{tourActuel === 1 ? "Actif" : "Inactif"}</strong>
-    </span>
-  </div>
-
-  <button
-    type="button"
-    className="action-btn"
-    style={{ ...styles.smallBtn, ...(tourActuel === 1 ? styles.btnT2Blue : styles.btnT1), padding: "12px 18px", fontWeight: 900 }}
-    onClick={async () => {
-      const target = tourActuel === 1 ? 2 : 1;
-      const ok = await uiService.confirm({
-        title: "Bascule du tour actif",
-        message:
-          target === 2
-            ? "Basculer l'application en TOUR 2 (actif) ?\n\nCette action ne confirme pas le passage officiel : elle change seulement le tour actif."
-            : "Basculer l'application en TOUR 1 (actif) ?\n\nCette action ne modifie pas les données : elle change seulement le tour actif.",
-        confirmText: target === 2 ? "Basculer en T2" : "Basculer en T1",
-        cancelText: "Annuler",
-      });
-      if (!ok) return;
-      try {
-        await googleSheetsService.updateElectionState({ tourActuel: target });
-        await loadState?.();
-        uiService.toast({ type: "success", message: target === 2 ? "✅ TOUR 2 : Actif" : "✅ TOUR 1 : Actif" });
-      } catch (e) {
-        uiService.toast({ type: "error", message: e?.message || "Erreur lors de la bascule" });
-      }
-    }}
-  >
-    {tourActuel === 1 ? "Basculer vers Passage T2 : Autorisé" : "Basculer vers Passage T1 : Autorisé"}
-  </button>
-</div>
-
+      <div className="auth-gate">
+        <p>Connexion Google requise pour accéder aux fonctions de saisie / export.</p>
+        <button className="btn btn-primary" onClick={handleSignIn} type="button">
+          Se connecter avec Google
+        </button>
       </div>
     );
   };
 
-  const renderAuthGate = () => (
-    <div className="page-container" style={{ padding: "1rem" }}>
-      <div className="card" style={{ maxWidth: 720, margin: "0 auto", padding: "1rem" }}>
-        <h2 style={{ marginTop: 0 }}>Connexion requise</h2>
-        <p>
-          Pour accéder aux saisies et aux données (Google Sheets), vous devez vous connecter avec le compte
-          Google autorisé.
-        </p>
-        <button className="action-btn primary" onClick={handleSignIn}>
-          Se connecter avec Google
-        </button>
-      </div>
-      {/* UI Toasts */}
-      <div className="ui-toast-container" aria-live="polite" aria-relevant="additions removals">
-        {uiToasts.map((t) => (
-          <div key={t.id} className={`ui-toast ${t.type}`}>
-            {t.title ? <div className="ui-toast-title">{t.title}</div> : null}
-            {t.message ? <div className="ui-toast-message">{t.message}</div> : null}
-          </div>
-        ))}
-      </div>
+  const renderPage = () => {
+    switch (currentPage) {
+      case "dashboard":
+        return <Dashboard electionState={safeElectionState} onNavigate={navigateSafe} />;
+      case "participation":
+        return (
+          <>
+            {renderAuthGate()}
+            {isAuthenticated && (
+              <>
+                {/* ⚠️ CORRECTION : Layout côte à côte pour BV avec STYLE INLINE */}
+                {isBureauVote ? (
+                  <>
+                    <style>{`
+                      @media (min-width: 1025px) {
+                        .participation-bv-grid {
+                          display: grid !important;
+                          grid-template-columns: 1fr 1fr !important;
+                          gap: 24px !important;
+                          margin-bottom: 24px !important;
+                        }
+                      }
+                    `}</style>
+                    <div className="participation-bv-grid">
+                      <ParticipationSaisie electionState={safeElectionState} reloadElectionState={loadState} />
+                      <ParticipationTableau electionState={safeElectionState} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <ParticipationSaisie electionState={safeElectionState} reloadElectionState={loadState} />
+                    <ParticipationTableau electionState={safeElectionState} />
+                  </>
+                )}
+                <ParticipationStats electionState={safeElectionState} isBureauVote={isBureauVote} />
+              </>
+            )}
+          </>
+        );
+      case "resultats":
+        return (
+          <>
+            {renderAuthGate()}
+            {isAuthenticated && (
+              <>
+                <ResultatsSaisieBureau electionState={safeElectionState} />
+                <ResultatsConsolidation electionState={safeElectionState} />
+                {/* ⚠️ CORRECTION : Masquer Validation et Classement pour les BV */}
+                {!isBureauVote && (
+                  <>
+                    <ResultatsValidation electionState={safeElectionState} />
+                    <ResultatsClassement electionState={safeElectionState} />
+                  </>
+                )}
+              </>
+            )}
+          </>
+        );
+      case "passage-t2":
+        return (
+          <>
+            {renderAuthGate()}
+            {isAuthenticated && (
+              <>
+                <PassageSecondTour
+                  electionState={safeElectionState}
+                  passerSecondTour={passerSecondTour}
+                  revenirPremierTour={revenirPremierTour}
+                  accessAuth={accessAuth}
+                />
+                <ConfigurationT2 electionState={safeElectionState} />
+              </>
+            )}
+          </>
+        );
+      case "sieges":
+        return (
+          <>
+            {renderAuthGate()}
+            {isAuthenticated && (
+              <>
+                <SiegesMunicipal electionState={safeElectionState} />
+                <SiegesCommunautaire electionState={safeElectionState} />
+              </>
+            )}
+          </>
+        );
+      case "exports":
+        return (
+          <>
+            {renderAuthGate()}
+            {isAuthenticated && (
+              <>
+                <ExportPDF />
+                <ExportExcel />
+              </>
+            )}
+          </>
+        );
+      case "admin":
+        return (
+          <>
+            {renderAuthGate()}
+            {isAuthenticated && (
+              <>
+                {/* === GESTION DES TOURS === */}
+                <div className="card" style={{ marginBottom: 24, border: '2px solid #e74c3c', background: '#fdf2f2' }}>
+                  <h2 style={{ color: '#c0392b', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    🔄 Gestion des Tours
+                  </h2>
+                  <p style={{ marginBottom: 16, color: '#555' }}>
+                    Tour actuel : <strong style={{ fontSize: '1.2em', color: safeElectionState.tourActuel === 1 ? '#2563eb' : '#dc2626' }}>
+                      Tour {safeElectionState.tourActuel}
+                    </strong>
+                    {safeElectionState.tour1Verrouille && safeElectionState.tourActuel === 1 && (
+                      <span style={{ marginLeft: 12, color: '#e67e22' }}>🔒 Tour 1 verrouillé</span>
+                    )}
+                    {safeElectionState.tour2Verrouille && safeElectionState.tourActuel === 2 && (
+                      <span style={{ marginLeft: 12, color: '#e67e22' }}>🔒 Tour 2 verrouillé</span>
+                    )}
+                  </p>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    {safeElectionState.tourActuel === 2 && (
+                      <button
+                        className="btn btn-warning"
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', fontSize: '1em', fontWeight: 600 }}
+                        onClick={async () => {
+                          const ok = await uiService.confirm({
+                            title: '⚠️ Retour au Tour 1',
+                            message: 'Voulez-vous vraiment revenir au Tour 1 ?\n\nLes données du Tour 2 seront conservées mais le tour actif sera le Tour 1.',
+                            confirmText: 'Oui, revenir au Tour 1',
+                            cancelText: 'Annuler'
+                          });
+                          if (!ok) return;
+                          try {
+                            await revenirPremierTour();
+                            uiService.toast('success', { title: 'Tour 1 actif', message: 'Retour au premier tour effectué.' });
+                          } catch (e) {
+                            uiService.toast('error', { title: 'Erreur', message: 'Retour Tour 1 échoué : ' + (e?.message || e) });
+                          }
+                        }}
+                      >
+                        ⬅️ Retour au Tour 1
+                      </button>
+                    )}
+                    {safeElectionState.tourActuel === 1 && (
+                      <button
+                        className="btn btn-danger"
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', fontSize: '1em', fontWeight: 600 }}
+                        onClick={async () => {
+                          const ok = await uiService.confirm({
+                            title: '⚠️ Passage au Tour 2',
+                            message: 'Voulez-vous vraiment passer au Tour 2 ?\n\nCette action changera le tour actif de l\'élection.',
+                            confirmText: 'Oui, passer au Tour 2',
+                            cancelText: 'Annuler'
+                          });
+                          if (!ok) return;
+                          try {
+                            await passerSecondTour();
+                            uiService.toast('success', { title: 'Tour 2 actif', message: 'Passage au second tour effectué.' });
+                          } catch (e) {
+                            uiService.toast('error', { title: 'Erreur', message: 'Passage Tour 2 échoué : ' + (e?.message || e) });
+                          }
+                        }}
+                      >
+                        ➡️ Forcer passage Tour 2
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <ConfigBureaux />
+                <ConfigCandidats />
+                <AuditLog />
+              </>
+            )}
+          </>
+        );
+      default:
+        return <Dashboard electionState={safeElectionState} onNavigate={navigateSafe} />;
+    }
+  };
 
-      {/* UI Confirm Modal */}
-      {uiConfirm.open ? (
-        <div className="ui-modal-backdrop" role="dialog" aria-modal="true">
+  // --- Rendu conditionnel sans return anticipé (évite bug hooks) ---
+  if (!accessAuth) {
+    return <AccessGate onAuthenticated={(a) => setAccessAuth(a)} />;
+  }
+
+  return (
+    <div className={`app-root theme-tour-${safeElectionState.tourActuel}`}>
+      <Navigation
+        currentPage={currentPage}
+        onNavigate={navigateSafe}
+        isAuthenticated={isAuthenticated}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
+        electionState={safeElectionState}
+        accessAuth={accessAuth}
+        onAccessLogout={handleAccessLogout}
+      />
+
+      <main className="app-main" role="main">
+        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center' }}>Chargement…</div>}>
+          {currentPage === "dashboard" ? renderPage() : (
+            <div className="page-container">
+              {renderPage()}
+            </div>
+          )}
+        </Suspense>
+      </main>
+
+      <Footer />
+
+      {uiConfirm?.open && (
+        <div className="ui-modal-overlay" role="dialog" aria-modal="true">
           <div className="ui-modal">
-            <div className="ui-modal-title">{uiConfirm.title || "Confirmation"}</div>
-            <div className="ui-modal-message">{uiConfirm.message}</div>
+            <div className="ui-modal-title">{uiConfirm.title}</div>
+            <div className="ui-modal-message" style={{ whiteSpace: "pre-wrap" }}>
+              {uiConfirm.message}
+            </div>
             <div className="ui-modal-actions">
               <button
                 type="button"
-                className="action-btn btn-compact"
+                className="btn btn-secondary"
                 onClick={() => {
-                  uiConfirm._resolve?.(false);
-                  setUiConfirm((prev) => ({ ...prev, open: false, _resolve: null }));
+                  const r = uiConfirm._resolve;
+                  setUiConfirm((p) => ({ ...p, open: false, _resolve: null }));
+                  r?.(false);
                 }}
               >
                 {uiConfirm.cancelText || "Annuler"}
               </button>
               <button
                 type="button"
-                className="action-btn primary btn-compact"
+                className="btn btn-primary"
                 onClick={() => {
-                  uiConfirm._resolve?.(true);
-                  setUiConfirm((prev) => ({ ...prev, open: false, _resolve: null }));
+                  const r = uiConfirm._resolve;
+                  setUiConfirm((p) => ({ ...p, open: false, _resolve: null }));
+                  r?.(true);
                 }}
               >
                 {uiConfirm.confirmText || "Confirmer"}
@@ -511,401 +460,16 @@ Cette action n'exécute pas le passage au tour 2 : elle autorise ou bloque la co
             </div>
           </div>
         </div>
-      ) : null}
-
-    </div>
-  );
-
-  // Bloc combiné : Retour T1 + Passage T2 côte à côte, couleurs distinctes
-  const renderAdminTourControls = () => {
-    if (!isAdminAuthenticated) return null;
-
-    // Source unique de vérité pour l'UI (Tour actif)
-    const tourActuel = Number(electionState?.tourActuel) === 2 ? 2 : 1;
-
-    // Autorisation (indépendante du tour actif) : autorise/bloque la confirmation du passage T2
-    const secondTourEnabled = Boolean(electionState?.secondTourEnabled);
-
-    return (
-      <div style={{ ...styles.panel("rgba(239, 68, 68, 0.10)"), width: "100%" }}>
-        <h3 style={styles.panelTitle}>🚨 Bascule Tour (admin)</h3>
-        <p style={styles.panelText}>
-          Contrôle de l'état global de l'application. Ces actions impactent directement Google Sheets et doivent être utilisées avec précaution.
-        </p>
-
-        {/* 4 boutons d'action sur une seule ligne */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-          {/* 1. Retour au 1er tour (état global) */}
-          <button
-            type="button"
-            className="action-btn"
-            style={{ ...styles.smallBtn, ...styles.btnT1, padding: "12px 18px", fontWeight: 900 }}
-            onClick={handleRetourPremierTour}
-            title="Réinitialise l'état global: tourActuel=1, verrous levés, passage T2 bloqué, qualifiés vidés"
-          >
-            Retour au 1er tour (état global)
-          </button>
-
-          {/* 2. Basculer vers Passage T2 : Autorisé */}
-          <button
-            type="button"
-            className="action-btn"
-            style={{ ...styles.smallBtn, ...styles.btnDanger, padding: "12px 18px", fontWeight: 900 }}
-            onClick={async () => {
-              const target = tourActuel === 1 ? 2 : 1;
-              const ok = await uiService.confirm({
-                title: 'Bascule Tour (admin)',
-                message:
-                  target === 2
-                    ? "Basculer l'application en TOUR 2 (actif) ?\n\nCette action ne confirme pas le passage officiel : elle change seulement le tour actif."
-                    : "Basculer l'application en TOUR 1 (actif) ?\n\nCette action ne modifie pas les données : elle change seulement le tour actif.",
-                confirmText: target === 2 ? 'Basculer en Tour 2' : 'Basculer en Tour 1',
-                cancelText: 'Annuler',
-              });
-              if (!ok) return;
-
-              try {
-                await googleSheetsService.updateElectionState({ tourActuel: target });
-                await loadState?.();
-                uiService.toast({ type: "success", message: target === 2 ? "✅ TOUR 2 : Actif" : "✅ TOUR 1 : Actif" });
-              } catch (e) {
-                uiService.toast({ type: "error", message: e?.message || "Erreur lors de la bascule" });
-              }
-            }}
-            title={tourActuel === 1 ? "Basculer vers Passage T2 : Autorisé" : "Basculer vers Passage T1 : Autorisé"}
-          >
-            {tourActuel === 1 ? "Basculer vers Passage T2 : Autorisé" : "Basculer vers Passage T1 : Autorisé"}
-          </button>
-
-          {/* 3. Autoriser Passage T2 */}
-          <button
-            type="button"
-            className="action-btn"
-            style={{ ...styles.smallBtn, ...styles.btnT2Blue, padding: "12px 18px", fontWeight: 900 }}
-            onClick={() => handleSetSecondTourEnabled(true)}
-            title="Autorise la confirmation du passage au 2nd tour dans la page Passage au 2nd tour"
-          >
-            Autoriser Passage T2
-          </button>
-
-          {/* 4. Bloquer Passage T2 */}
-          <button
-            type="button"
-            className="action-btn"
-            style={{ ...styles.smallBtn, ...styles.btnDanger, padding: "12px 18px", fontWeight: 900 }}
-            onClick={() => handleSetSecondTourEnabled(false)}
-            title="Bloque la confirmation du passage au 2nd tour"
-          >
-            Bloquer Passage T2
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  // Wrapper visuel sans rajouter de titres (évite les doublons avec les composants internes)
-  const CardSection = ({ children }) => (
-    <div className="card" style={styles.sectionCard}>
-      {children}
-      {/* UI Toasts */}
-      <div className="ui-toast-container" aria-live="polite" aria-relevant="additions removals">
-        {uiToasts.map((t) => (
-          <div key={t.id} className={`ui-toast ${t.type}`}>
-            {t.title ? <div className="ui-toast-title">{t.title}</div> : null}
-            {t.message ? <div className="ui-toast-message">{t.message}</div> : null}
-          </div>
-        ))}
-      </div>
-
-      {/* UI Confirm Modal */}
-
-    </div>
-  );
-
-  const renderAdminTablesStyle = () => (
-    <style>{`
-            /* ===== Admin: boutons texte noir ===== */
-      .admin-page .action-btn{ color: #000 !important; }
-      .admin-page .action-btn.primary{ color: #fff !important; }
-
-      /* ====== Boutons : même taille en responsive ====== */
-      .btn-compact{ width: fit-content; }
-      @media (max-width: 640px){
-        .btn-compact{ width: 100% !important; justify-content: center; }
-      }
-
-      /* ====== ADMIN BUTTONS: texte NOIR (sauf boutons .primary) ====== */
-      .page-container .action-btn{ color: #000 !important; }
-      .page-container .action-btn.primary{ color: #fff !important; }
-
-      
-      .admin-page .action-btn{ color: #000 !important; }
-      .admin-page .action-btn.primary{ color: #fff !important; }
-/* ====== TABLES ADMIN: lisibilité + arrondis + zébrage ====== */
-      .admin-table, .audit-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
-        overflow: hidden;
-        border-radius: 14px;
-        border: 1px solid rgba(0,0,0,0.08);
-      }
-      .admin-table thead th, .audit-table thead th {
-        background: rgba(156, 163, 175, 0.95); /* gris clair */
-        color: #fff; /* police blanche */
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        font-size: 12px;
-        padding: 10px 12px;
-        border-bottom: 1px solid rgba(0,0,0,0.10);
-      }
-      .admin-table tbody td, .audit-table tbody td {
-        padding: 10px 12px;
-        border-bottom: 1px solid rgba(0,0,0,0.06);
-        vertical-align: top;
-      }
-      .admin-table tbody tr:nth-child(even),
-      .audit-table tbody tr:nth-child(even) {
-        background: rgba(0,0,0,0.03); /* 1 ligne sur 2 contrastée */
-      }
-      .admin-table tbody tr:last-child td,
-      .audit-table tbody tr:last-child td {
-        border-bottom: none;
-      }
-
-      .audit-table-container {
-        overflow-x: auto;
-      }
-
-      /* ===== Tableau admin responsive (bureaux/candidats) ===== */
-      .table-scroll{ overflow-x:auto; }
-      .table-scroll .admin-table{ min-width: 900px; }
-      .sticky-first-col th:first-child,
-      .sticky-first-col td.sticky-col{
-        position: sticky;
-        left: 0;
-        background: #fff;
-        z-index: 2;
-        border-right: 1px solid rgba(0,0,0,0.10);
-      }
-      .sticky-first-col tbody tr:nth-child(even) td.sticky-col{
-        background: rgba(0,0,0,0.03);
-      }
-    `}</style>
-  );
-
-  const renderPage = () => {
-    switch (currentPage) {
-      case "dashboard":
-        return <Dashboard onNavigate={setCurrentPage} electionState={electionState} />;
-
-      case "participation":
-        if (!isAuthenticated) return renderAuthGate();
-        return (
-          <div className="page-container">
-            <ParticipationSaisie electionState={electionState} reloadElectionState={loadState} />
-            <ParticipationTableau electionState={electionState} />
-            <ParticipationStats electionState={electionState} />
-          </div>
-        );
-
-      case "resultats":
-        if (!isAuthenticated) return renderAuthGate();
-        return (
-          <div className="page-container">
-            <ResultatsSaisieBureau electionState={electionState} />
-            <ResultatsConsolidation electionState={electionState} />
-            <ResultatsValidation electionState={electionState} />
-            <ResultatsClassement electionState={electionState} />
-          </div>
-        );
-
-      case "passage-t2":
-        if (!isAuthenticated) return renderAuthGate();
-        return (
-          <div className="page-container">
-            <PassageSecondTour
-              electionState={electionState}
-              passerSecondTour={passerSecondTour}
-              reloadElectionState={loadState}
-              isAdminAuthenticated={isAdminAuthenticated}
-            />
-            <ConfigurationT2 electionState={electionState} />
-          </div>
-        );
-
-      case "sieges":
-        if (!isAuthenticated) return renderAuthGate();
-        return (
-          <div className="page-container">
-            <SiegesMunicipal electionState={electionState} />
-            <SiegesCommunautaire electionState={electionState} />
-          </div>
-        );
-
-      case "exports":
-        if (!isAuthenticated) return renderAuthGate();
-        return (
-          <div className="page-container">
-            <ExportPDF electionState={electionState} />
-            <ExportExcel electionState={electionState} />
-          </div>
-        );
-
-      case "admin":
-        if (!isAuthenticated) return renderAuthGate();
-        return (
-          <div className="page-container admin-page">
-            {renderAdminModal()}
-            {renderAdminTablesStyle()}
-
-            <div className="card" style={styles.sectionCard}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-                <h2 style={{ margin: 0 }}>⚙️ Administration</h2>
-                {isAdminAuthenticated && (
-                  <button
-                    type="button"
-                    className="action-btn btn-compact"
-                    style={{ ...styles.smallBtn, ...styles.btnDanger }}
-                    onClick={handleAdminLogout}
-                  >
-                    Déconnexion
-                  </button>
-                )}
-              </div>
-              <p style={{ margin: "0.5rem 0 0 0" }}>
-                Accès protégé par mot de passe. Les actions ici impactent l’état officiel (Sheets) et doivent être tracées.
-              </p>
-            </div>
-
-            {isAdminAuthenticated ? (
-              <>
-                {renderAdminTourControls()}
-
-                <CardSection>
-                  <ConfigBureaux />
-                </CardSection>
-
-                <CardSection>
-                  <ConfigCandidats />
-                </CardSection>
-
-                <CardSection>
-                  <AuditLog />
-                </CardSection>
-              </>
-            ) : null}
-          </div>
-        );
-
-      default:
-        return <Dashboard onNavigate={setCurrentPage} electionState={electionState} />;
-    }
-  };
-
-  return (
-    <div className={`app ${electionState?.tourActuel === 2 ? "theme-tour-2" : "theme-tour-1"}`}>
-      <Navigation key={`${electionState?.tourActuel ?? 1}-${electionState?.secondTourEnabled ? 1 : 0}`} currentPage={currentPage} onNavigate={setCurrentPage} isAuthenticated={isAuthenticated} onSignIn={handleSignIn} onSignOut={handleSignOut} electionState={electionState} />
-
-      <main className="main-content">{renderPage()}</main>
-
-      <Footer />
-      {/* UI Toasts */}
-      <div className="ui-toast-container" aria-live="polite" aria-relevant="additions removals">
-        {uiToasts.map((t) => (
-          <div key={t.id} className={`ui-toast ${t.type}`}>
-            {t.title ? <div className="ui-toast-title">{t.title}</div> : null}
-            {t.message ? <div className="ui-toast-message">{t.message}</div> : null}
-          </div>
-        ))}
-      </div>
-
-      {/* UI Confirm Modal */}
-      {uiConfirm.open && (
-        <div 
-          className="ui-modal-overlay" 
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 99999,
-          }}
-          onClick={() => {
-            setUiConfirm({ ...uiConfirm, open: false });
-            if (uiConfirm._resolve) uiConfirm._resolve(false);
-          }}>
-          <div className="ui-modal-content" 
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '16px',
-              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.4)',
-              maxWidth: '500px',
-              width: '90%',
-              maxHeight: '90vh',
-              overflow: 'auto',
-            }}
-            onClick={(e) => e.stopPropagation()}>
-            <div className="ui-modal-header" style={{ padding: '24px 24px 16px 24px', borderBottom: '1px solid rgba(0, 0, 0, 0.1)' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#1a1a1a' }}>
-                {uiConfirm.title || 'Confirmation'}
-              </h3>
-            </div>
-            <div className="ui-modal-body" style={{ padding: '24px' }}>
-              <p style={{ margin: 0, color: '#4a4a4a', lineHeight: 1.6, fontSize: '0.95rem', whiteSpace: 'pre-wrap' }}>
-                {uiConfirm.message}
-              </p>
-            </div>
-            <div className="ui-modal-footer" style={{ padding: '16px 24px 24px 24px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                className="action-btn"
-                style={{ 
-                  backgroundColor: '#6B7280', 
-                  color: '#fff',
-                  padding: '10px 20px',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  fontSize: '0.9rem',
-                  cursor: 'pointer',
-                  border: 'none',
-                }}
-                onClick={() => {
-                  setUiConfirm({ ...uiConfirm, open: false });
-                  if (uiConfirm._resolve) uiConfirm._resolve(false);
-                }}
-              >
-                {uiConfirm.cancelText || 'Annuler'}
-              </button>
-              <button
-                className="action-btn primary"
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  fontSize: '0.9rem',
-                  cursor: 'pointer',
-                  border: 'none',
-                }}
-                onClick={() => {
-                  setUiConfirm({ ...uiConfirm, open: false });
-                  if (uiConfirm._resolve) uiConfirm._resolve(true);
-                }}
-              >
-                {uiConfirm.confirmText || 'Confirmer'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
+      <div className="ui-toasts" aria-live="polite" aria-relevant="additions">
+        {uiToasts.map((t) => (
+          <div key={t.id} className={`ui-toast ${t.type || "info"}`}>
+            {t.title ? <div className="ui-toast-title">{t.title}</div> : null}
+            {t.message ? <div className="ui-toast-message">{t.message}</div> : null}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
-
-export default App;

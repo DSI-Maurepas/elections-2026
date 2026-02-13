@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 import googleSheetsService from '../../services/googleSheetsService';
 import uiService from '../../services/uiService';
+import auditService from '../../services/auditService';
 import { SHEET_NAMES } from '../../utils/constants';
 
 const AuditLog = () => {

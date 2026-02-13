@@ -1,14 +1,17 @@
 // src/services/authService.js
 // Service d'authentification OAuth 2.0 pour Google Sheets API
+// + Gestion d'accès applicatif (BV / Global / Admin) via code, stocké en localStorage (jour J)
 
 import { GOOGLE_SHEETS, LOCAL_STORAGE_KEYS } from '../utils/constants';
+import { ACCESS_CONFIG, parseAccessCode } from '../config/authConfig.js';
+
+// --- Accès applicatif (BV / Global / Admin) ---
+// Stockage: localStorage (session persistante dans le navigateur).
+const ACCESS_STORAGE_KEY = 'elections_access_v1';
 
 // --- Auth Admin (mot de passe local) ---
-// NOTE: Auth "Administration" volontairement locale (pas Google OAuth). Usage interne jour J.
-// Stockage: localStorage (session persistante dans le navigateur).
+// Compat V3: l'espace Administration est déverrouillé via un mot de passe.
 const ADMIN_STORAGE_KEY = 'elections_admin_auth_v1';
-const ADMIN_PASSWORD = 'Elections@M0rep@$';
-
 
 class AuthService {
   constructor() {
@@ -52,7 +55,7 @@ class AuthService {
     if (!this.tokenClient) {
       await this.initialize();
     }
-    
+
     return new Promise((resolve, reject) => {
       try {
         this.tokenClient.callback = (response) => {
@@ -63,7 +66,7 @@ class AuthService {
           this.handleAuthResponse(response);
           resolve(response);
         };
-        
+
         this.tokenClient.requestAccessToken({ prompt: '' });
       } catch (error) {
         reject(error);
@@ -76,10 +79,10 @@ class AuthService {
    */
   handleAuthResponse(response) {
     this.accessToken = response.access_token;
-    
+
     // Stocker le token (attention: localStorage non sécurisé pour prod)
     localStorage.setItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN, response.access_token);
-    
+
     // Stocker l'expiration
     const expiresIn = response.expires_in || 3600;
     const expiresAt = Date.now() + (expiresIn * 1000);
@@ -87,37 +90,36 @@ class AuthService {
   }
 
   /**
-   * Déconnexion
+   * Déconnexion OAuth
    */
-signOut() {
-  const token = this.accessToken || localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
+  signOut() {
+    const token = this.accessToken || localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
 
-  if (token && window.google?.accounts?.oauth2) {
-    google.accounts.oauth2.revoke(token);
+    if (token && window.google?.accounts?.oauth2) {
+      google.accounts.oauth2.revoke(token);
+    }
+
+    this.accessToken = null;
+    localStorage.removeItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
+    localStorage.removeItem('auth_token_expires_at');
+    localStorage.removeItem(LOCAL_STORAGE_KEYS.USER_EMAIL);
   }
 
-  this.accessToken = null;
-  localStorage.removeItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
-  localStorage.removeItem('auth_token_expires_at');
-  localStorage.removeItem(LOCAL_STORAGE_KEYS.USER_EMAIL);
-}
-
-
   /**
-   * Vérifie si l'utilisateur est authentifié
+   * Vérifie si l'utilisateur est authentifié OAuth
    */
   isAuthenticated() {
     const token = localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
     const expiresAt = localStorage.getItem('auth_token_expires_at');
-    
+
     if (!token || !expiresAt) return false;
-    
+
     // Vérifier l'expiration
-    if (Date.now() > parseInt(expiresAt)) {
+    if (Date.now() > parseInt(expiresAt, 10)) {
       this.signOut();
       return false;
     }
-    
+
     this.accessToken = token;
     return true;
   }
@@ -137,20 +139,15 @@ signOut() {
    */
   async refreshTokenIfNeeded() {
     const expiresAt = localStorage.getItem('auth_token_expires_at');
-    
+
     if (!expiresAt) return;
-    
+
     const now = Date.now();
-    const timeUntilExpiry = parseInt(expiresAt) - now;
-    
+    const timeUntilExpiry = parseInt(expiresAt, 10) - now;
+
     // Rafraîchir si expire dans moins de 5 minutes
     if (timeUntilExpiry < 5 * 60 * 1000) {
-      try {
-        await this.signIn();
-      } catch (error) {
-        console.error('Erreur lors du rafraîchissement du token:', error);
-        throw error;
-      }
+      await this.signIn();
     }
   }
 
@@ -163,29 +160,25 @@ signOut() {
       throw new Error('Non authentifié');
     }
 
-    try {
-      const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+    const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-      if (!response.ok) {
-        throw new Error('Erreur lors de la récupération des informations utilisateur');
-      }
-
-      const userInfo = await response.json();
-      localStorage.setItem(LOCAL_STORAGE_KEYS.USER_EMAIL, userInfo.email);
-      return userInfo;
-    } catch (error) {
-      console.error('Erreur getUserInfo:', error);
-      throw error;
+    if (!response.ok) {
+      throw new Error("Erreur lors de la récupération des informations utilisateur");
     }
+
+    const userInfo = await response.json();
+    localStorage.setItem(LOCAL_STORAGE_KEYS.USER_EMAIL, userInfo.email);
+    return userInfo;
   }
 
   /**
    * Récupère l'email de l'utilisateur
    */
+  getUserEmail() {
+    return localStorage.getItem(LOCAL_STORAGE_KEYS.USER_EMAIL) || 'utilisateur@inconnu.com';
+  }
 
   // =========================
   // Auth Administration (mot de passe)
@@ -197,7 +190,7 @@ signOut() {
    * @returns {boolean} true si OK
    */
   adminSignIn(password) {
-    const ok = typeof password === 'string' && password === ADMIN_PASSWORD;
+    const ok = typeof password === 'string' && password === ACCESS_CONFIG.ADMIN_PASSWORD;
     if (ok) {
       localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify({ ok: true, ts: Date.now() }));
     }
@@ -225,11 +218,66 @@ signOut() {
       return false;
     }
   }
+}
 
-  getUserEmail() {
-    return localStorage.getItem(LOCAL_STORAGE_KEYS.USER_EMAIL) || 'utilisateur@inconnu.com';
+// =========================
+// Accès applicatif (BV / GLOBAL / ADMIN)
+// =========================
+
+/**
+ * Login applicatif par code (BVx / Global / Admin).
+ * @param {string} code
+ * @returns {{role:'BV'|'GLOBAL'|'ADMIN', bureauId?:number}|null}
+ */
+export function loginWithCode(code) {
+  const auth = parseAccessCode(code);
+  if (!auth) return null;
+  localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify({ ...auth, ts: Date.now() }));
+  return auth;
+}
+
+/**
+ * Etat d'accès applicatif courant.
+ * @returns {{role:'BV'|'GLOBAL'|'ADMIN', bureauId?:number}|null}
+ */
+export function getAuthState() {
+  try {
+    const raw = localStorage.getItem(ACCESS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.role) return null;
+    return parsed;
+  } catch {
+    return null;
   }
 }
 
-// Instance singleton
-export default new AuthService();
+export function logoutAccess() {
+  localStorage.removeItem(ACCESS_STORAGE_KEY);
+  // on ne touche pas au token OAuth ici (décision volontaire)
+}
+
+export function clearAllSessions() {
+  logoutAccess();
+  localStorage.removeItem(ADMIN_STORAGE_KEY);
+  try {
+    authService.signOut();
+  } catch {
+    // noop
+  }
+}
+
+// Helpers attendus par les composants (Participation / Résultats)
+export function isBV(auth) {
+  return auth?.role === 'BV';
+}
+export function isGlobal(auth) {
+  return auth?.role === 'GLOBAL';
+}
+export function isAdmin(auth) {
+  return auth?.role === 'ADMIN';
+}
+
+// Instance singleton OAuth (compat V3)
+const authService = new AuthService();
+export default authService;

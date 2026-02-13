@@ -1,24 +1,54 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
+import { getAuthState, isBV } from '../../services/authService';
+
+/**
+ * Normalise les bureauId pour un matching robuste
+ */
+const normalizeBureauId = (value) => {
+  if (value === null || value === undefined) return '';
+  const s = String(value).trim().toUpperCase();
+  const m = s.match(/(\d+)/);
+  return m ? m[1] : s;
+};
 
 /**
  * Consolidation des résultats
- * - Totaux communaux
- * - Statistiques agrégées
- * - Tableau par candidat
+ * 
+ * ⚠️ CORRECTION (2026-02-09) :
+ * - Les BV voient les inscrits communaux en CONTEXTE uniquement
+ * - Les calculs (participation, abstentions) utilisent les données du BUREAU pour les BV
+ * - Les Global/Admin voient la consolidation complète communale
  *
  * IMPORTANT :
  * - Ne touche pas à Participation
  * - Ne modifie pas les données dans Sheets (affichage/consolidation locale uniquement)
  */
 const ResultatsConsolidation = ({ electionState}) => {
+  // Détection du profil utilisateur
+  const auth = useMemo(() => getAuthState(), []);
+  const isBureau = isBV(auth);
+  const bureauId = auth?.bureauId ?? null;
+
   const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
   const { data: candidats, load: loadCandidats } = useGoogleSheets('Candidats');
   const { data: resultats, load: loadResultats } = useGoogleSheets(
     electionState.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2'
   );
 
+  // ⚠️ ADMIN uniquement : données T1/T2 pour statistiques et progression
+  const { data: resultatsT1, load: loadResultatsT1 } = useGoogleSheets('Resultats_T1');
+  const { data: resultatsT2, load: loadResultatsT2 } = useGoogleSheets('Resultats_T2');
+
   const [totaux, setTotaux] = useState({
+    inscrits: 0,
+    votants: 0,
+    blancs: 0,
+    nuls: 0,
+    exprimes: 0
+  });
+
+  const [totauxCommunaux, setTotauxCommunaux] = useState({
     inscrits: 0,
     votants: 0,
     blancs: 0,
@@ -33,17 +63,6 @@ const ResultatsConsolidation = ({ electionState}) => {
 
   const isValidHexColor = (hex) =>
     typeof hex === 'string' && /^#([0-9a-fA-F]{6})$/.test(hex.trim());
-
-  const yiqTextColor = (hex) => {
-    if (!isValidHexColor(hex)) return '#111827';
-    const h = hex.trim().replace('#', '');
-    const r = parseInt(h.substring(0, 2), 16);
-    const g = parseInt(h.substring(2, 4), 16);
-    const b = parseInt(h.substring(4, 6), 16);
-    // YIQ perceived brightness
-    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-    return yiq >= 140 ? '#111827' : '#FFFFFF';
-  };
 
   const getCandidateDisplayName = (c) => {
     if (!c) return '';
@@ -81,28 +100,64 @@ const ResultatsConsolidation = ({ electionState}) => {
     loadBureaux();
     loadCandidats();
     loadResultats();
-  }, [loadBureaux, loadCandidats, loadResultats]);
+
+    // ADMIN : on charge aussi T1/T2 pour les stats inter-tours (sans impact BV)
+    if (!isBureau) {
+      loadResultatsT1();
+      loadResultatsT2();
+    }
+  }, [loadBureaux, loadCandidats, loadResultats, loadResultatsT1, loadResultatsT2, isBureau]);
 
   // ---------- Consolidation locale ----------
   useEffect(() => {
     if (bureaux.length === 0 && resultats.length === 0) {
       setTotaux({ inscrits: 0, votants: 0, blancs: 0, nuls: 0, exprimes: 0 });
+      setTotauxCommunaux({ inscrits: 0, votants: 0, blancs: 0, nuls: 0, exprimes: 0 });
       setClassementCandidats([]);
       return;
     }
 
-    // Totaux communaux
-    const totalInscrits = bureaux.reduce((sum, b) => sum + (Number(b.inscrits) || 0), 0);
+    // ⚠️ CORRECTION : Totaux communaux (TOUS les bureaux - pour contexte)
+    const totalInscritsCommune = bureaux.reduce((sum, b) => sum + (Number(b.inscrits) || 0), 0);
+    const totalVotantsCommune = resultats.reduce((sum, r) => sum + (Number(r.votants) || 0), 0);
+    const totalBlancsCommune = resultats.reduce((sum, r) => sum + (Number(r.blancs) || 0), 0);
+    const totalNulsCommune = resultats.reduce((sum, r) => sum + (Number(r.nuls) || 0), 0);
+    const totalExprimesRawCommune = resultats.reduce((sum, r) => sum + (Number(r.exprimes) || 0), 0);
+    const totalExprimesSafeCommune =
+      totalExprimesRawCommune > 0 ? totalExprimesRawCommune : Math.max(0, totalVotantsCommune - totalBlancsCommune - totalNulsCommune);
 
-    const totalVotants = resultats.reduce((sum, r) => sum + (Number(r.votants) || 0), 0);
-    const totalBlancs = resultats.reduce((sum, r) => sum + (Number(r.blancs) || 0), 0);
-    const totalNuls = resultats.reduce((sum, r) => sum + (Number(r.nuls) || 0), 0);
+    setTotauxCommunaux({
+      inscrits: totalInscritsCommune,
+      votants: totalVotantsCommune,
+      blancs: totalBlancsCommune,
+      nuls: totalNulsCommune,
+      exprimes: totalExprimesSafeCommune
+    });
 
-    // ⚠️ Robustesse : si la colonne "exprimes" est vide/0 mais votants/blancs/nuls existent,
-    // on affiche un exprimés calculé (affichage uniquement, sans écrire dans Sheets).
-    const totalExprimesRaw = resultats.reduce((sum, r) => sum + (Number(r.exprimes) || 0), 0);
-    const totalExprimesSafe =
-      totalExprimesRaw > 0 ? totalExprimesRaw : Math.max(0, totalVotants - totalBlancs - totalNuls);
+    // ⚠️ CORRECTION : Pour les BV, utiliser les données du BUREAU uniquement
+    let totalInscrits, totalVotants, totalBlancs, totalNuls, totalExprimesSafe;
+
+    if (isBureau && bureauId) {
+      // Filtrer les données du bureau uniquement
+      const normalized = normalizeBureauId(bureauId);
+      const bureauData = bureaux.find((b) => normalizeBureauId(b?.id ?? '') === normalized);
+      const resultatsBureau = resultats.filter((r) => normalizeBureauId(r?.bureauId ?? '') === normalized);
+
+      totalInscrits = bureauData ? Number(bureauData.inscrits) || 0 : 0;
+      totalVotants = resultatsBureau.reduce((sum, r) => sum + (Number(r.votants) || 0), 0);
+      totalBlancs = resultatsBureau.reduce((sum, r) => sum + (Number(r.blancs) || 0), 0);
+      totalNuls = resultatsBureau.reduce((sum, r) => sum + (Number(r.nuls) || 0), 0);
+      
+      const totalExprimesRaw = resultatsBureau.reduce((sum, r) => sum + (Number(r.exprimes) || 0), 0);
+      totalExprimesSafe = totalExprimesRaw > 0 ? totalExprimesRaw : Math.max(0, totalVotants - totalBlancs - totalNuls);
+    } else {
+      // Global/Admin : utiliser les totaux communaux
+      totalInscrits = totalInscritsCommune;
+      totalVotants = totalVotantsCommune;
+      totalBlancs = totalBlancsCommune;
+      totalNuls = totalNulsCommune;
+      totalExprimesSafe = totalExprimesSafeCommune;
+    }
 
     setTotaux({
       inscrits: totalInscrits,
@@ -119,9 +174,14 @@ const ResultatsConsolidation = ({ electionState}) => {
 
     // Classement candidats (jointure sur listeId <-> voix[Lx])
     if (candidatsActifs.length > 0) {
+      // ⚠️ CORRECTION : Pour les BV, utiliser uniquement les résultats de LEUR bureau
+      const resultsForClassement = isBureau && bureauId
+        ? resultats.filter((r) => normalizeBureauId(r?.bureauId ?? '') === normalizeBureauId(bureauId))
+        : resultats;
+
       const candidatsAvecTotaux = candidatsActifs.map((candidat) => {
         const listeId = candidat?.listeId;
-        const totalVoix = resultats.reduce((sum, r) => {
+        const totalVoix = resultsForClassement.reduce((sum, r) => {
           const voix = r?.voix?.[listeId];
           return sum + (Number(voix) || 0);
         }, 0);
@@ -139,7 +199,7 @@ const ResultatsConsolidation = ({ electionState}) => {
     } else {
       setClassementCandidats([]);
     }
-  }, [resultats, candidats, bureaux, electionState.tourActuel]);
+  }, [resultats, candidats, bureaux, electionState.tourActuel, isBureau, bureauId]);
 
   const nbBureaux = bureaux.length;
 
@@ -169,6 +229,142 @@ const ResultatsConsolidation = ({ electionState}) => {
     return (totaux.nuls / totaux.votants) * 100;
   }, [totaux]);
 
+
+  // -------------------- ADMIN : statistiques par bureau (Tour courant) --------------------
+  const bureauxStats = useMemo(() => {
+    // BV : pas de stats globales (évite charge + régression UI)
+    if (isBureau) return [];
+    if (!Array.isArray(bureaux) || bureaux.length === 0) return [];
+
+    // Index résultats par bureauId (sur le tour courant)
+    const resultsByBureau = new Map();
+    for (const r of (resultats || [])) {
+      const bid = normalizeBureauId(r?.bureauId ?? '');
+      if (!bid) continue;
+      const agg = resultsByBureau.get(bid) || { votants: 0, blancs: 0, nuls: 0, exprimes: 0, voixSum: 0 };
+      agg.votants += Number(r?.votants) || 0;
+      agg.blancs += Number(r?.blancs) || 0;
+      agg.nuls += Number(r?.nuls) || 0;
+      agg.exprimes += Number(r?.exprimes) || 0;
+
+      const voixObj = r?.voix;
+      if (voixObj && typeof voixObj === 'object') {
+        for (const v of Object.values(voixObj)) agg.voixSum += Number(v) || 0;
+      }
+      resultsByBureau.set(bid, agg);
+    }
+
+    const getLabel = (b) => {
+      const id = b?.id ?? '';
+      const nom = b?.nom ?? b?.label ?? b?.bureau ?? b?.libelle ?? b?.lieu ?? '';
+      const idNorm = normalizeBureauId(id);
+      if (nom) return `BV${idNorm} — ${nom}`;
+      return `BV${idNorm}`;
+    };
+
+    return (bureaux || []).map((b) => {
+      const idNorm = normalizeBureauId(b?.id ?? '');
+      const r = resultsByBureau.get(idNorm) || { votants: 0, blancs: 0, nuls: 0, exprimes: 0, voixSum: 0 };
+      const inscrits = Number(b?.inscrits) || 0;
+      const votants = r.votants || 0;
+      const blancs = r.blancs || 0;
+      const nuls = r.nuls || 0;
+      const exprimes = (r.exprimes > 0 ? r.exprimes : Math.max(0, votants - blancs - nuls)) || 0;
+
+      const participationPct = inscrits > 0 ? (votants / inscrits) * 100 : 0;
+      const abstentions = Math.max(0, inscrits - votants);
+      const abstentionPct = inscrits > 0 ? (abstentions / inscrits) * 100 : 0;
+      const nulsPct = votants > 0 ? (nuls / votants) * 100 : 0;
+      const blancsPct = votants > 0 ? (blancs / votants) * 100 : 0;
+
+      return {
+        id: idNorm,
+        label: getLabel(b),
+        inscrits,
+        votants,
+        blancs,
+        nuls,
+        exprimes,
+        participationPct,
+        abstentions,
+        abstentionPct,
+        nulsPct,
+        blancsPct,
+      };
+    });
+  }, [isBureau, bureaux, resultats]);
+
+  // -------------------- ADMIN : progression votants T1 -> T2 (uniquement quand Tour 2) --------------------
+  const bureauxProgressionT1T2 = useMemo(() => {
+    if (isBureau) return [];
+    if (electionState.tourActuel !== 2) return [];
+    if (!Array.isArray(bureaux) || bureaux.length === 0) return [];
+
+    const aggTour = (rows) => {
+      const map = new Map();
+      for (const r of (rows || [])) {
+        const bid = normalizeBureauId(r?.bureauId ?? '');
+        if (!bid) continue;
+        const prev = map.get(bid) || { votants: 0 };
+        prev.votants += Number(r?.votants) || 0;
+        map.set(bid, prev);
+      }
+      return map;
+    };
+
+    const t1 = aggTour(resultatsT1);
+    const t2 = aggTour(resultatsT2);
+
+    return (bureaux || []).map((b) => {
+      const idNorm = normalizeBureauId(b?.id ?? '');
+      const inscrits = Number(b?.inscrits) || 0;
+      const vot1 = (t1.get(idNorm)?.votants) || 0;
+      const vot2 = (t2.get(idNorm)?.votants) || 0;
+
+      const pct1 = inscrits > 0 ? (vot1 / inscrits) * 100 : 0;
+      const pct2 = inscrits > 0 ? (vot2 / inscrits) * 100 : 0;
+
+      return {
+        id: idNorm,
+        label: b?.nom ?? b?.label ?? b?.bureau ?? b?.libelle ?? '',
+        inscrits,
+        vot1,
+        vot2,
+        deltaVotants: vot2 - vot1,
+        deltaPts: pct2 - pct1,
+      };
+    });
+  }, [isBureau, electionState.tourActuel, bureaux, resultatsT1, resultatsT2]);
+
+  const adminExtremes = useMemo(() => {
+    if (isBureau) return null;
+    const rows = bureauxStats;
+    if (!rows || rows.length === 0) return null;
+
+    const byMax = (key) => rows.reduce((best, r) => (best === null || (r[key] ?? -Infinity) > (best[key] ?? -Infinity) ? r : best), null);
+    const byMin = (key) => rows.reduce((best, r) => (best === null || (r[key] ?? Infinity) < (best[key] ?? Infinity) ? r : best), null);
+
+    const plusPart = byMax('participationPct');
+    const moinsPart = byMin('participationPct');
+
+    const plusAbs = byMax('abstentionPct');
+    const moinsAbs = byMin('abstentionPct');
+
+    const plusNuls = byMax('nulsPct');
+    const moinsNuls = byMin('nulsPct');
+
+    const plusBlancs = byMax('blancs');
+    const moinsBlancs = byMin('blancs');
+
+    let progMax = null;
+    let progMin = null;
+    if (electionState.tourActuel === 2 && Array.isArray(bureauxProgressionT1T2) && bureauxProgressionT1T2.length > 0) {
+      progMax = bureauxProgressionT1T2.reduce((best, r) => (best === null || (r.deltaVotants ?? -Infinity) > (best.deltaVotants ?? -Infinity) ? r : best), null);
+      progMin = bureauxProgressionT1T2.reduce((best, r) => (best === null || (r.deltaVotants ?? Infinity) < (best.deltaVotants ?? Infinity) ? r : best), null);
+    }
+
+    return { plusPart, moinsPart, plusAbs, moinsAbs, plusNuls, moinsNuls, plusBlancs, moinsBlancs, progMax, progMin };
+  }, [isBureau, bureauxStats, bureauxProgressionT1T2, electionState.tourActuel]);
   const top1 = classementCandidats[0];
   const top2 = classementCandidats[1];
 
@@ -182,284 +378,434 @@ const ResultatsConsolidation = ({ electionState}) => {
     return `${getCandidateDisplayName(top1)} vs ${getCandidateDisplayName(top2)}`;
   }, [top1, top2]);
 
-  const maxVoix = useMemo(() => {
-    const v = classementCandidats.map((c) => Number(c.totalVoix) || 0);
-    return v.length ? Math.max(...v) : 0;
-  }, [classementCandidats]);
-
   return (
     <div className="resultats-consolidation">
 
       <style>{`
         /* ===== RésultatsConsolidation — ajouts UI (scopés) ===== */
-        .resultats-consolidation .stats-cards{
-          display:grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 12px;
+        .resultats-consolidation .stats-grid-3 {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 14px;
+          margin-bottom: 14px;
         }
-        .resultats-consolidation .stats-card--participation{
-          border: 2px solid rgba(59, 130, 246, 0.55);
-          background: linear-gradient(135deg, rgba(59, 130, 246, 0.16), rgba(255,255,255,0.92));
-          box-shadow: 0 12px 22px rgba(2, 6, 23, 0.08);
+        .resultats-consolidation .stats-grid-1 {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 14px;
         }
-        /* Tableau candidats: largeur + 1ère colonne fixée (desktop) */
-        .resultats-consolidation .candidats-table.candidats-table--responsive{
-          width:100%;
-          border-collapse: separate;
-          border-spacing: 0;
+        .resultats-consolidation .stats-card {
+          padding: 20px 24px;
+          border-radius: 18px;
+          box-shadow: 0 10px 18px rgba(2, 6, 23, 0.08);
         }
-        @media (min-width: 901px){
-          .resultats-consolidation .candidats-table.candidats-table--responsive td.candidat-name,
-          .resultats-consolidation .candidats-table.candidats-table--responsive th:first-child{
-            position: sticky;
-            left: 0;
-            z-index: 2;
-            background: rgba(255,255,255,0.96);
-          }
-          .resultats-consolidation .candidats-table.candidats-table--responsive td.candidat-name{
-            z-index: 3;
-          }
+        .resultats-consolidation .stats-card-label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.95rem;
+          font-weight: 800;
+          color: rgba(15, 23, 42, 0.7);
+          margin-bottom: 12px;
         }
-        /* Mobile/tablette: rendu "cartes" sans scroll horizontal */
-        @media (max-width: 900px){
-          .resultats-consolidation .candidats-table.candidats-table--responsive thead{
-            display:none;
-          }
-          .resultats-consolidation .candidats-table.candidats-table--responsive,
-          .resultats-consolidation .candidats-table.candidats-table--responsive tbody,
-          .resultats-consolidation .candidats-table.candidats-table--responsive tr,
-          .resultats-consolidation .candidats-table.candidats-table--responsive td{
-            display:block;
-            width:100%;
-          }
-          .resultats-consolidation .candidats-table.candidats-table--responsive tr{
-            margin: 10px 0 14px;
-            padding: 10px 10px 6px;
-            border-radius: 16px;
-            border: 1px solid rgba(15, 23, 42, 0.12);
-            box-shadow: 0 12px 24px rgba(2, 6, 23, 0.08);
-            background: rgba(255,255,255,0.96);
-          }
-          .resultats-consolidation .candidats-table.candidats-table--responsive td{
-            padding: 8px 10px;
-            border: none;
-          }
-          .resultats-consolidation .candidats-table.candidats-table--responsive td.candidat-name{
-            padding: 6px 10px 10px;
-            border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-            margin-bottom: 8px;
-          }
-          .resultats-consolidation .candidats-table.candidats-table--responsive td[data-label]{
-            display:flex;
-            align-items:center;
-            justify-content: space-between;
-            gap: 12px;
-          }
-          .resultats-consolidation .candidats-table.candidats-table--responsive td[data-label]::before{
-            content: attr(data-label);
-            font-weight: 900;
-            opacity: 0.75;
-            white-space: nowrap;
+        .resultats-consolidation .stats-card-value {
+          font-size: 2.2rem;
+          font-weight: 900;
+          color: #0f172a;
+          line-height: 1;
+        }
+        .resultats-consolidation .stats-card-meta {
+          margin-top: 8px;
+          font-size: 0.95rem;
+          font-weight: 700;
+          color: rgba(15, 23, 42, 0.6);
+        }
+
+        /* Responsive: passage en 1 colonne sur mobile */
+        @media (max-width: 900px) {
+          .resultats-consolidation .stats-grid-3 {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
 
-      <h3>🏛️ Consolidation communale - Tour {electionState.tourActuel}</h3>
-
-      {/* 6 cartes totaux */}
-      <div className="totaux-grid totaux-grid-6">
-        <div className="total-card total-card--inscrits">
-          <div className="card-value">{totaux.inscrits.toLocaleString('fr-FR')}</div>
-          <div className="card-label">Inscrits</div>
-        </div>
-
-        <div className="total-card total-card--votants">
-          <div className="card-value">{totaux.votants.toLocaleString('fr-FR')}</div>
-          <div className="card-label">Votants</div>
-        </div>
-
-        <div className="total-card total-card--exprimes">
-          <div className="card-value">{totaux.exprimes.toLocaleString('fr-FR')}</div>
-          <div className="card-label">Exprimés</div>
-        </div>
-
-        <div className="total-card total-card--blancs">
-          <div className="card-value">{totaux.blancs.toLocaleString('fr-FR')}</div>
-          <div className="card-label">Blancs</div>
-        </div>
-
-        <div className="total-card total-card--nuls">
-          <div className="card-value">{totaux.nuls.toLocaleString('fr-FR')}</div>
-          <div className="card-label">Nuls</div>
-        </div>
-
-        <div className="total-card total-card--abstentions">
-          <div className="card-value">{totalAbstentions.toLocaleString('fr-FR')}</div>
-          <div className="card-label">Abstentions</div>
-        </div>
-      </div>
-
-      {/* Statistiques */}
-      <div className="resultats-stats">
-        <h4>📌 Statistiques :</h4>
-
-        <div className="stats-cards">
-          <div className="stats-card stats-card--declares">
-            <div className="stats-value">
-              <strong>{nbBureauxDeclares.toLocaleString('fr-FR')}</strong> <span className="stats-sep">/</span>{' '}
-              <strong>{nbBureaux.toLocaleString('fr-FR')}</strong>
+      <div style={{ marginTop: 22 }}>
+        {/* Titre principal */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a' }}>
+                🏛️ Consolidation {isBureau ? 'du bureau' : 'communale'} - Tour {electionState.tourActuel}
+              </div>
             </div>
-            <div className="stats-label">Bureaux déclarés</div>
-          </div>
-
-          <div className="stats-card stats-card--blancs">
-            <div className="stats-value">
-              <strong>{tauxBlancs.toFixed(2)}%</strong>
-              <span className="stats-sub">
-                <strong>{totaux.blancs.toLocaleString('fr-FR')}</strong> / <strong>{totaux.votants.toLocaleString('fr-FR')}</strong>
-              </span>
-            </div>
-            <div className="stats-label">Taux de blancs</div>
-          </div>
-
-          <div className="stats-card stats-card--nuls">
-            <div className="stats-value">
-              <strong>{tauxNuls.toFixed(2)}%</strong>
-              <span className="stats-sub">
-                <strong>{totaux.nuls.toLocaleString('fr-FR')}</strong> / <strong>{totaux.votants.toLocaleString('fr-FR')}</strong>
-              </span>
-            </div>
-            <div className="stats-label">Taux de nuls</div>
-          </div>
-
-          <div className="stats-card stats-card--ecart">
-            <div className="stats-value">
-              <strong>{ecartVoix === null ? 'N/A' : `${ecartVoix.toLocaleString('fr-FR')} voix`}</strong>
-              <span className="stats-sub">{ecartLabel}</span>
-            </div>
-            <div className="stats-label">Écart 1er / 2ème</div>
-          </div>
-          <div className="stats-card stats-card--participation">
-            <div className="stats-value">
-              <strong>{tauxParticipation.toFixed(2)}%</strong>
-              <span className="stats-sub">
-                {totaux.votants.toLocaleString('fr-FR')} / {totaux.inscrits.toLocaleString('fr-FR')}
-              </span>
-            </div>
-            <div className="stats-label">Taux de participation (communal)</div>
-          </div>
-        </div>
-        <br />
-      </div>
-
-      {/* Résultats par candidat */}
-      <div className="resultats-candidats">
-        <h4>🧑‍💼 Résultats par candidat&nbsp;:</h4>
-
-        <table className="candidats-table candidats-table--responsive">
-          <thead>
-            <tr>
-              <th style={{ background: '#1f3b6d', color: '#fff' }}>Candidat</th>
-              <th>Voix</th>
-              <th>%</th>
-              <th>Statut</th>
-              <th style={{ width: '36%' }}>Proportion</th>
-            </tr>
-          </thead>
-          <tbody>
-            {classementCandidats.map((candidat, index) => {
-              const color = getCandidateColor(candidat, index);
-              const isQualifie = electionState.tourActuel === 1 && index < 2;
-              const statut = electionState.tourActuel === 1 ? (isQualifie ? 'Qualifié' : 'Éliminé') : '—';
-
-              const pct = clampPct(candidat.pourcentage);
-              const ratioToWinner = maxVoix > 0 ? (Number(candidat.totalVoix) || 0) / maxVoix : 0;
-              const pctBar = clampPct(ratioToWinner * 100);
-
-              // Texte toujours visible : couleur adaptée au fond (barre ou fond gris)
-              const textColor = pctBar < 28 ? '#111827' : yiqTextColor(color);
-              const textShadow = pctBar < 28 ? 'none' : '0 1px 1px rgba(0,0,0,0.35)';
-
-              return (
-                <tr
-                  key={(candidat.listeId || candidat.id) ?? `candidat-${index}`}
-                  className={isQualifie ? 'qualified' : ''}
-                >
-                  <td className="candidat-name" style={isQualifie ? { background: 'rgba(34,197,94,0.12)' } : undefined}>
-                    <span className="candidat-color-dot" style={{ backgroundColor: color }} />
-                    <span style={{ fontWeight: 800, fontSize: '1.05rem' }}>
-                      {candidat.displayName || getCandidateDisplayName(candidat)}
-                    </span>
-                  </td>
-
-                  <td data-label="Voix">{(Number(candidat.totalVoix) || 0).toLocaleString('fr-FR')}</td>
-                  <td data-label="%">{pct.toFixed(2)}%</td>
-                  <td data-label="Statut">
-                    {electionState.tourActuel === 1 ? (
-                      <span className={`badge ${isQualifie ? 'badge--ok' : 'badge--ko'}`}>
-                        {isQualifie ? '✅ Qualifié' : '⛔ Éliminé'}
-                      </span>
-                    ) : (
-                      <span className="badge badge--neutral">{statut}</span>
-                    )}
-                  </td>
-
-                  <td data-label="Barre">
-                    <div style={{ position: 'relative', width: '100%', minWidth: 220 }}>
-                      <div
-                        className="bar-container"
-                        style={{
-                          position: 'relative',
-                          height: 18,
-                          borderRadius: 10,
-                          background: '#e5e7eb',
-                          overflow: 'hidden'
-                        }}
-                      >
-                        <div
-                          className="bar-fill"
-                          style={{
-                            width: `${pctBar}%`,
-                            height: '100%',
-                            backgroundColor: color
-                          }}
-                        />
-                        <div
-                          style={{
-                            position: 'absolute',
-                            inset: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontWeight: 800,
-                            fontSize: 13,
-                            color: textColor,
-                            textShadow
-                          }}
-                          aria-label={`Pourcentage ${pct.toFixed(1)}%`}
-                        >
-                          {pct.toFixed(1)}%
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-
-            {classementCandidats.length === 0 && (
-              <tr>
-                <td colSpan={5} style={{ textAlign: 'center', padding: '18px 8px', opacity: 0.75 }}>
-                  Aucun candidat actif trouvé pour le tour {electionState.tourActuel} (vérifier ActifT1/ActifT2 dans l’onglet Candidats).
-                </td>
-              </tr>
+            {isBureau && (
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 999,
+                fontWeight: 800,
+                background: 'rgba(59, 130, 246, 0.10)',
+                border: '1px solid rgba(59, 130, 246, 0.30)',
+                color: '#0f172a',
+                fontSize: '0.85rem'
+              }}>
+                📊 Bureau BV{bureauId}
+              </div>
             )}
-          </tbody>
-        </table>
+          </div>
+        </div>
+        {(isBureau && electionState.tourActuel === 2) ? (
+          <>
+            {/* ===== BV — Tour 2 : 6 blocs (2 lignes) ===== */}
+            <div className="stats-grid-3">
+          {/* Inscrits */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(34, 197, 94, 0.55)',
+            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.11) 0%, rgba(134, 239, 172, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              📋 Inscrits {isBureau ? '(votre bureau)' : ''}
+            </div>
+            <div className="stats-card-value">
+              {(Number(totaux.inscrits) || 0).toLocaleString('fr-FR')}
+            </div>
+            {isBureau && (
+              <div className="stats-card-meta" style={{ fontSize: '0.85rem', opacity: 0.7 }}>
+                Contexte communal : {(Number(totauxCommunaux.inscrits) || 0).toLocaleString('fr-FR')} inscrits ({nbBureaux} bureaux)
+              </div>
+            )}
+            {!isBureau && (
+              <div className="stats-card-meta">
+                {nbBureaux} bureau{nbBureaux > 1 ? 'x' : ''}
+              </div>
+            )}
+          </div>
 
-{/* Classement officiel (UI moderne) */}
+          {/* Participation */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(59, 130, 246, 0.55)',
+            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.11) 0%, rgba(147, 197, 253, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              ✅ Participation {isBureau ? '(votre bureau)' : ''}
+            </div>
+            <div className="stats-card-value">
+              {clampPct(tauxParticipation).toFixed(2)}%
+            </div>
+            <div className="stats-card-meta">
+              {(Number(totaux.votants) || 0).toLocaleString('fr-FR')} / {(Number(totaux.inscrits) || 0).toLocaleString('fr-FR')}
+            </div>
+          </div>
+
+          {/* Écart 1er/2ème */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(168, 85, 247, 0.55)',
+            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.11) 0%, rgba(192, 132, 252, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              📈 Écart 1er / 2ème
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+              <div className="stats-card-value">
+                {ecartVoix !== null ? ecartVoix.toLocaleString('fr-FR') : 'N/A'} voix
+              </div>
+              <div className="stats-card-meta" style={{ fontSize: '1.1rem' }}>
+                {ecartLabel}
+              </div>
+            </div>
+          </div>
+            </div>
+
+            <div className="stats-grid-3">
+          {/* Taux de blancs */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(148, 163, 184, 0.55)',
+            background: 'linear-gradient(135deg, rgba(148, 163, 184, 0.11) 0%, rgba(203, 213, 225, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              📄 Taux de blancs
+            </div>
+            <div className="stats-card-value">
+              {clampPct(tauxBlancs).toFixed(2)}%
+            </div>
+            <div className="stats-card-meta">
+              {(Number(totaux.blancs) || 0).toLocaleString('fr-FR')} / {(Number(totaux.votants) || 0).toLocaleString('fr-FR')}
+            </div>
+          </div>
+
+          {/* Taux de nuls */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(239, 68, 68, 0.55)',
+            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.11) 0%, rgba(248, 113, 113, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              🚫 Taux de nuls
+            </div>
+            <div className="stats-card-value">
+              {clampPct(tauxNuls).toFixed(2)}%
+            </div>
+            <div className="stats-card-meta">
+              {(Number(totaux.nuls) || 0).toLocaleString('fr-FR')} / {(Number(totaux.votants) || 0).toLocaleString('fr-FR')}
+            </div>
+          </div>
+          {/* Abstentions */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(249, 115, 22, 0.55)',
+            background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.11) 0%, rgba(251, 146, 60, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              ❌ Abstentions
+            </div>
+            <div className="stats-card-value">
+              {totalAbstentions.toLocaleString('fr-FR')}
+            </div>
+            <div className="stats-card-meta">
+              {clampPct(100 - tauxParticipation).toFixed(2)}%
+            </div>
+          </div>
+            </div>
+          </>
+        ) : (
+          <>
+
+
+        {/* ===== Première ligne : 3 blocs ===== */}
+        <div className="stats-grid-3">
+          {/* Inscrits */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(34, 197, 94, 0.55)',
+            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.11) 0%, rgba(134, 239, 172, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              📋 Inscrits {isBureau ? '(votre bureau)' : ''}
+            </div>
+            <div className="stats-card-value">
+              {(Number(totaux.inscrits) || 0).toLocaleString('fr-FR')}
+            </div>
+            {isBureau && (
+              <div className="stats-card-meta" style={{ fontSize: '0.85rem', opacity: 0.7 }}>
+                Contexte communal : {(Number(totauxCommunaux.inscrits) || 0).toLocaleString('fr-FR')} inscrits ({nbBureaux} bureaux)
+              </div>
+            )}
+            {!isBureau && (
+              <div className="stats-card-meta">
+                {nbBureaux} bureau{nbBureaux > 1 ? 'x' : ''}
+              </div>
+            )}
+          </div>
+
+          {/* Participation */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(59, 130, 246, 0.55)',
+            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.11) 0%, rgba(147, 197, 253, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              ✅ Participation {isBureau ? '(votre bureau)' : ''}
+            </div>
+            <div className="stats-card-value">
+              {clampPct(tauxParticipation).toFixed(2)}%
+            </div>
+            <div className="stats-card-meta">
+              {(Number(totaux.votants) || 0).toLocaleString('fr-FR')} / {(Number(totaux.inscrits) || 0).toLocaleString('fr-FR')}
+            </div>
+          </div>
+
+          {/* Abstentions */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(249, 115, 22, 0.55)',
+            background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.11) 0%, rgba(251, 146, 60, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              ❌ Abstentions
+            </div>
+            <div className="stats-card-value">
+              {totalAbstentions.toLocaleString('fr-FR')}
+            </div>
+            <div className="stats-card-meta">
+              {clampPct(100 - tauxParticipation).toFixed(2)}%
+            </div>
+          </div>
+        </div>
+
+        {/* ===== Deuxième ligne : 3 blocs ===== */}
+        <div className="stats-grid-3">
+          {/* Bureaux déclarés */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(34, 197, 94, 0.55)',
+            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.11) 0%, rgba(134, 239, 172, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              📊 Bureaux déclarés
+            </div>
+            <div className="stats-card-value">
+              {nbBureauxDeclares} / {nbBureaux}
+            </div>
+            <div className="stats-card-meta">
+              {nbBureaux > 0 ? ((nbBureauxDeclares / nbBureaux) * 100).toFixed(0) : 0}%
+            </div>
+          </div>
+
+          {/* Taux de blancs */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(148, 163, 184, 0.55)',
+            background: 'linear-gradient(135deg, rgba(148, 163, 184, 0.11) 0%, rgba(203, 213, 225, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              📄 Taux de blancs
+            </div>
+            <div className="stats-card-value">
+              {clampPct(tauxBlancs).toFixed(2)}%
+            </div>
+            <div className="stats-card-meta">
+              {(Number(totaux.blancs) || 0).toLocaleString('fr-FR')} / {(Number(totaux.votants) || 0).toLocaleString('fr-FR')}
+            </div>
+          </div>
+
+          {/* Taux de nuls */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(239, 68, 68, 0.55)',
+            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.11) 0%, rgba(248, 113, 113, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              🚫 Taux de nuls
+            </div>
+            <div className="stats-card-value">
+              {clampPct(tauxNuls).toFixed(2)}%
+            </div>
+            <div className="stats-card-meta">
+              {(Number(totaux.nuls) || 0).toLocaleString('fr-FR')} / {(Number(totaux.votants) || 0).toLocaleString('fr-FR')}
+            </div>
+          </div>
+        </div>
+
+        {/* ===== Troisième ligne : 1 bloc pleine largeur ===== */}
+        <div className="stats-grid-1">
+          {/* Écart 1er/2ème */}
+          <div className="stats-card" style={{
+            border: '2px solid rgba(168, 85, 247, 0.55)',
+            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.11) 0%, rgba(192, 132, 252, 0.07) 100%)'
+          }}>
+            <div className="stats-card-label">
+              📈 Écart 1er / 2ème
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+              <div className="stats-card-value">
+                {ecartVoix !== null ? ecartVoix.toLocaleString('fr-FR') : 'N/A'} voix
+              </div>
+              <div className="stats-card-meta" style={{ fontSize: '1.1rem' }}>
+                {ecartLabel}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        
+          </>
+        )}
+
+        
+        {/* ===== ADMIN uniquement : blocs statistiques (2 par ligne) ===== */}
+        {!isBureau && adminExtremes && (
+          <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+            {/* Ligne 3 : Participation */}
+            <div className="stats-card" style={{ border: '2px solid rgba(59,130,246,0.55)', background: 'linear-gradient(135deg, rgba(59,130,246,0.10) 0%, rgba(147,197,253,0.08) 100%)' }}>
+              <div className="stats-card-label">📈 Bureau avec la plus forte participation</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusPart?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.plusPart?.votants ?? 0).toLocaleString('fr-FR')} votants • {clampPct(adminExtremes.plusPart?.participationPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="stats-card" style={{ border: '2px solid rgba(99,102,241,0.55)', background: 'linear-gradient(135deg, rgba(99,102,241,0.10) 0%, rgba(199,210,254,0.08) 100%)' }}>
+              <div className="stats-card-label">📉 Bureau avec la moins forte participation</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsPart?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.moinsPart?.votants ?? 0).toLocaleString('fr-FR')} votants • {clampPct(adminExtremes.moinsPart?.participationPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            {/* Ligne 4 : Abstention */}
+            <div className="stats-card" style={{ border: '2px solid rgba(244,63,94,0.55)', background: 'linear-gradient(135deg, rgba(244,63,94,0.10) 0%, rgba(254,205,211,0.08) 100%)' }}>
+              <div className="stats-card-label">🚫 Bureau avec la plus forte abstention</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusAbs?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.plusAbs?.abstentions ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.plusAbs?.abstentionPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="stats-card" style={{ border: '2px solid rgba(16,185,129,0.55)', background: 'linear-gradient(135deg, rgba(16,185,129,0.10) 0%, rgba(167,243,208,0.08) 100%)' }}>
+              <div className="stats-card-label">✅ Bureau avec la moins forte abstention</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsAbs?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.moinsAbs?.abstentions ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.moinsAbs?.abstentionPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            {/* Ligne 5 : Nuls */}
+            <div className="stats-card" style={{ border: '2px solid rgba(234,179,8,0.55)', background: 'linear-gradient(135deg, rgba(234,179,8,0.10) 0%, rgba(253,230,138,0.10) 100%)' }}>
+              <div className="stats-card-label">⚫ Bureau avec le taux de nuls le plus élevé</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusNuls?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.plusNuls?.nuls ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.plusNuls?.nulsPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="stats-card" style={{ border: '2px solid rgba(148,163,184,0.65)', background: 'linear-gradient(135deg, rgba(148,163,184,0.14) 0%, rgba(226,232,240,0.10) 100%)' }}>
+              <div className="stats-card-label">⚪ Bureau avec le taux de nuls le moins élevé</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsNuls?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.moinsNuls?.nuls ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.moinsNuls?.nulsPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            {/* Ligne 6 : Blancs */}
+            <div className="stats-card" style={{ border: '2px solid rgba(147,51,234,0.55)', background: 'linear-gradient(135deg, rgba(147,51,234,0.10) 0%, rgba(233,213,255,0.10) 100%)' }}>
+              <div className="stats-card-label">⚪ Bureau avec le plus de bulletins blancs</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusBlancs?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.plusBlancs?.blancs ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.plusBlancs?.blancsPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="stats-card" style={{ border: '2px solid rgba(203,213,225,0.85)', background: 'linear-gradient(135deg, rgba(203,213,225,0.18) 0%, rgba(241,245,249,0.12) 100%)' }}>
+              <div className="stats-card-label">⚪ Bureau avec le moins de bulletins blancs</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsBlancs?.label || '—'}</div>
+              <div className="stats-card-meta">
+                {(adminExtremes.moinsBlancs?.blancs ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.moinsBlancs?.blancsPct ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            {/* Ligne 7 : Progression T1 -> T2 */}
+            <div className="stats-card" style={{ border: '2px solid rgba(34,197,94,0.55)', background: 'linear-gradient(135deg, rgba(34,197,94,0.11) 0%, rgba(134,239,172,0.07) 100%)' }}>
+              <div className="stats-card-label">🚀 Plus forte progression de votants 1er/2nd Tour</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>
+                {electionState.tourActuel === 2 ? (adminExtremes.progMax ? `BV${adminExtremes.progMax.id}` : '—') : 'Disponible en Tour 2'}
+              </div>
+              {electionState.tourActuel === 2 && adminExtremes.progMax && (
+                <div className="stats-card-meta">
+                  {Number(adminExtremes.progMax.deltaVotants ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.progMax.deltaPts ?? 0).toFixed(2)} pts
+                </div>
+              )}
+            </div>
+
+            <div className="stats-card" style={{ border: '2px solid rgba(239,68,68,0.55)', background: 'linear-gradient(135deg, rgba(239,68,68,0.10) 0%, rgba(254,202,202,0.08) 100%)' }}>
+              <div className="stats-card-label">🐢 Moins forte progression de votants 1er/2nd Tour</div>
+              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>
+                {electionState.tourActuel === 2 ? (adminExtremes.progMin ? `BV${adminExtremes.progMin.id}` : '—') : 'Disponible en Tour 2'}
+              </div>
+              {electionState.tourActuel === 2 && adminExtremes.progMin && (
+                <div className="stats-card-meta">
+                  {Number(adminExtremes.progMin.deltaVotants ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.progMin.deltaPts ?? 0).toFixed(2)} pts
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+{/* ===== Classement officiel ===== */}
         <div
-          className="classement-officiel"
           style={{
             marginTop: 22,
             borderRadius: 18,
@@ -481,28 +827,13 @@ const ResultatsConsolidation = ({ electionState}) => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-<div>
+              <div>
                 <div style={{ fontWeight: 900, fontSize: '1.1rem', lineHeight: 1.1, color: '#0f172a' }}>
-                  Classement officiel
-                                <div style={{ marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '6px 10px',
-                      borderRadius: 999,
-                      fontWeight: 900,
-                      background: 'rgba(255,255,255,0.92)',
-                      border: '1px solid rgba(15, 23, 42, 0.12)',
-                      boxShadow: '0 8px 14px rgba(2, 6, 23, 0.06)',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                     Tour {electionState.tourActuel}
-                  </span>
-                </div>
-                  {electionState.tourActuel === 1 && (
+                  🏆 Résultats par candidat {isBureau ? '(votre bureau)' : ''}
+                  <div style={{ marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <br />
+				  </div>
+                  {electionState.tourActuel === 1 && !isBureau && (
                     <span
                       style={{
                         display: 'inline-flex',
@@ -517,7 +848,7 @@ const ResultatsConsolidation = ({ electionState}) => {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                       Les 2 listes qualifiées
+                      🗳️ Tour {electionState.tourActuel} - 2 listes qualifiées
                     </span>
                   )}
                 </div>
@@ -549,7 +880,7 @@ const ResultatsConsolidation = ({ electionState}) => {
                   whiteSpace: 'nowrap',
                 }}
               >
-                 {(Number(totaux.exprimes) || 0).toLocaleString('fr-FR')}
+                ✍️ {(Number(totaux.exprimes) || 0).toLocaleString('fr-FR')}
               </span>
             </div>
           </div>
@@ -562,16 +893,17 @@ const ResultatsConsolidation = ({ electionState}) => {
                 return classementCandidats.map((c, idx) => {
                   const voix = Number(c.totalVoix) || 0;
                   const pct = clampPct(c.pourcentage);
-                  const rankEmoji = idx === 0 ? '' : idx === 1 ? '' : idx === 2 ? '' : '';
                   const color = isValidHexColor(c.couleur) ? c.couleur : getCandidateColor(c.listeId, idx);
-                  const barPct = maxVoix > 0 ? (voix / maxVoix) * 100 : 0;
 
-                  const isQualifie = electionState.tourActuel === 1 && idx < 2;
+                  const isQualifie = electionState.tourActuel === 1 && idx < 2 && !isBureau;
 
                   return (
                     <div
                       key={c.listeId || idx}
                       style={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
                         borderRadius: 16,
                         padding: '10px 22px',
                         background: 'rgba(255,255,255,0.92)',
@@ -580,8 +912,8 @@ const ResultatsConsolidation = ({ electionState}) => {
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 260 }}>
-<div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: '1 1 0' }}>
+                          <div style={{ minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <span
                                 style={{
@@ -636,14 +968,10 @@ const ResultatsConsolidation = ({ electionState}) => {
                               whiteSpace: 'nowrap',
                             }}
                           >
-                             {pct.toFixed(2)}%
+                            📊 {pct.toFixed(2)}%
                           </span>
                         </div>
                       </div>
-
-                      {/* Barre relative au 1er (max voix) */}
-                      <div style={{ marginTop: 10 }}>
-                        </div>
                     </div>
                   );
                 });

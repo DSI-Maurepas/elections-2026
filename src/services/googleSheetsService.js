@@ -10,7 +10,7 @@
 //
 // NB: OAuth Bearer token requis. Pas de clé API nécessaire.
 
-import authService from './authService';
+import authService, { getAuthState } from './authService';
 import { SHEET_NAMES } from '../utils/constants';
 
 class GoogleSheetsService {
@@ -22,6 +22,62 @@ class GoogleSheetsService {
     this._cache = new Map();    // key -> { at, data }
     this._cacheTtlMs = 800;     // cache court (ms)
   }
+
+
+  // ==================== ACCÈS (BV / GLOBAL / ADMIN) ====================
+
+  _getAccessContext() {
+    const auth = getAuthState?.() || null;
+    const role = auth?.role || null;
+    const bureauId = auth?.bureauId ?? null;
+    return { auth, role, bureauId };
+  }
+
+  _normalizeBureauId(value) {
+    if (value === null || value === undefined) return '';
+    const s = String(value).trim().toUpperCase();
+    const m = s.match(/(\d+)/);
+    return m ? m[1] : s;
+  }
+
+  _assertBureauAllowed(targetBureauId) {
+    const { role, bureauId } = this._getAccessContext();
+    if (role === 'BV') {
+      const t = this._normalizeBureauId(targetBureauId);
+      const b = this._normalizeBureauId(bureauId);
+      if (!t || !b || t !== b) {
+        throw new Error('Accès refusé : bureau non autorisé');
+      }
+    }
+  }
+
+  _filterRowsByAccess(sheetName, rows) {
+    const { role, bureauId } = this._getAccessContext();
+    if (role !== 'BV') return rows;
+
+    const norm = String(sheetName || '').trim();
+
+    // BV : ne voit que SON bureau dans les feuilles bureautées
+    const keepOnlyBureau = (r) => this._normalizeBureauId(r?.bureauId) === this._normalizeBureauId(bureauId);
+
+    // ⚠️ CORRECTION (2026-02-09) : BV doit voir les données de référence pour l'affichage des résultats
+    
+    // Candidats : LECTURE SEULE, tous les candidats (nécessaire pour afficher les noms dans ResultatsConsolidation)
+    if (norm === 'Candidats') return rows;
+    
+    // Bureaux : TOUS les bureaux (nécessaire pour calculer les inscrits communaux et statistiques)
+    // Note : la saisie reste limitée au bureau du BV via _assertBureauAllowed dans updateRow/appendRow
+    if (norm === 'Bureaux') return rows;
+    
+    // Participation et Résultats : FILTRAGE strict sur le bureau du BV
+    if (norm === 'Participation_T1' || norm === 'Participation_T2') return rows.filter(keepOnlyBureau);
+    if (norm === 'Resultats_T1' || norm === 'Resultats_T2') return rows.filter(keepOnlyBureau);
+
+    // Par défaut, BV n'a pas accès au reste via l'UI (routes protégées),
+    // mais on filtre à vide ici par prudence si un composant appelait quand même le service.
+    return [];
+  }
+
 
   // ==================== HELPERS ====================
 
@@ -52,14 +108,84 @@ class GoogleSheetsService {
     return value;
   }
 
-  /**
+    /**
    * Construit une notation A1 robuste:
    * - entoure toujours le nom d'onglet de quotes simples (support espaces/accents)
    * - échappe les quotes simples selon la règle Google Sheets ('' )
+   * - accepte aussi une entrée déjà au format "Feuille!A1:B2" (évite double !A:Z)
    */
-  a1(sheetName, range = 'A:Z') {
+  a1(sheetOrA1, range = 'A:Z') {
+    const input = String(sheetOrA1 || '').trim();
+
+    // Si on nous passe déjà une A1 (ex: "Candidats!A2:B"), on découpe proprement.
+    let sheetName = input;
+    let localRange = range;
+
+    if (input.includes('!')) {
+      const idx = input.indexOf('!');
+      sheetName = input.slice(0, idx);
+      localRange = input.slice(idx + 1) || range;
+
+      // Enlève des quotes éventuelles autour du nom d'onglet
+      // (on re-quotera systématiquement ensuite)
+      if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
+        sheetName = sheetName.slice(1, -1).replace(/''/g, "'");
+      }
+    }
+
+    // Normalisation des ranges "ouverts" de type A2:B (Google API refuse)
+    // => A2:B9999 (suffisant pour couvrir toutes les lignes)
+    const openEndedColRange = /^([A-Z]+)(\d+):([A-Z]+)$/i;
+    const m = String(localRange || '').trim().match(openEndedColRange);
+    if (m) {
+      const startCol = m[1].toUpperCase();
+      const startRow = m[2];
+      const endCol = m[3].toUpperCase();
+      localRange = `${startCol}${startRow}:${endCol}9999`;
+    }
+
     const safe = String(this.normalizeSheetName(sheetName) || '').replace(/'/g, "''");
-    return `'${safe}'!${range}`;
+    return `'${safe}'!${localRange}`;
+  }
+
+
+  /**
+   * Variante A1 pour les endpoints qui exigent la range dans l'URL path (ex: values/{range}:append|clear).
+   * Objectif: éviter les erreurs "Unable to parse range" observées avec des noms d'onglets quotés
+   * lorsqu'ils passent dans le path encodé. 
+   *
+   * Règle:
+   * - Si le nom d'onglet est "safe" (A-Z a-z 0-9 underscore) ET qu'on nous passe un nom d'onglet simple,
+   *   on génère sans quotes: SheetName!A:Z
+   * - Sinon, on retombe sur a1() (quotée, robuste espaces/accents).
+   *
+   * NB: Ne modifie pas la logique de normalizeSheetName.
+   */
+  a1Path(sheetOrA1, range = 'A:Z') {
+    const input = String(sheetOrA1 || '').trim();
+
+    // Si l'appelant fournit déjà une A1 complète, on ne tente pas de "dé-quotage" agressif:
+    // on ne retire les quotes que si le nom d'onglet est "safe".
+    if (input.includes('!')) {
+      const idx = input.indexOf('!');
+      let sheetName = input.slice(0, idx);
+      const localRange = input.slice(idx + 1) || range;
+
+      if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
+        sheetName = sheetName.slice(1, -1).replace(/''/g, "'");
+      }
+      const safeName = String(this.normalizeSheetName(sheetName) || '');
+      if (/^[A-Za-z0-9_]+$/.test(safeName)) {
+        return `${safeName}!${localRange}`;
+      }
+      return this.a1(sheetName, localRange);
+    }
+
+    const safeName = String(this.normalizeSheetName(input) || '');
+    if (/^[A-Za-z0-9_]+$/.test(safeName)) {
+      return `${safeName}!${range}`;
+    }
+    return this.a1(input, range);
   }
 
   
@@ -246,7 +372,7 @@ async sleep(ms) {
           couleur: row[4] || '#0055A4',
           ordre: parseInt(row[5]) || 0,
           actifT1: String(row[6] ?? '').trim().toUpperCase() === 'TRUE',
-          actifT2: row[7] === 'TRUE' || row[7] === true
+          actifT2: String(row[7] ?? '').trim().toUpperCase() === 'TRUE'
         }));
 
       case 'Participation_T1':
@@ -280,7 +406,7 @@ async sleep(ms) {
       case 'Resultats_T1':
       case 'Resultats_T2':
         // Colonnes attendues (Google Sheets):
-        // A BureauID | B Inscrits | C Votants | D Blancs | E Nuls | F Exprimes | G..K L1_Voix..L5_Voix | L SaisiPar | M ValidePar | N Timestamp
+        // A BureauID | B Inscrits | C Votants | D Blancs | E Nuls | F Exprimes | G..L L1_Voix..L6_Voix | M SaisiPar | N ValidePar | O Timestamp
         return rows.map(row => {
           const voix = {
             L1: parseInt(row[6]) || 0,
@@ -288,6 +414,7 @@ async sleep(ms) {
             L3: parseInt(row[8]) || 0,
             L4: parseInt(row[9]) || 0,
             L5: parseInt(row[10]) || 0,
+            L6: parseInt(row[11]) || 0,
           };
 
           return {
@@ -298,9 +425,9 @@ async sleep(ms) {
             nuls: parseInt(row[4]) || 0,
             exprimes: parseInt(row[5]) || 0,
             voix,
-            saisiPar: row[11] || '',
-            validePar: row[12] || '',
-            timestamp: row[13] || ''
+            saisiPar: row[12] || '',
+            validePar: row[13] || '',
+            timestamp: row[14] || ''
           };
         });
 
@@ -341,6 +468,15 @@ async sleep(ms) {
           eligible: String(_str(row, 'Eligible', 5, 'FALSE')).trim().toUpperCase() === 'TRUE'
         }));
 default:
+        // AuditLog : colonnes A timestamp | B user | C action | D details
+        if (sheetName === 'AuditLog') {
+          return rows.map(row => ({
+            timestamp: row[0] || '',
+            user: row[1] || '',
+            action: row[2] || '',
+            details: row[3] || ''
+          }));
+        }
         // Par défaut, retourner les lignes brutes
         return rows;
     }
@@ -350,7 +486,9 @@ default:
     const normalizedSheet = this.normalizeSheetName(sheetName);
     const range = filters?.range || 'A:Z';
     const a1 = this.a1(normalizedSheet, range);
-    const key = `getData:${normalizedSheet}:${a1}`;
+    const { role, bureauId } = this._getAccessContext();
+    const accessKey = role === 'BV' ? `BV:${bureauId}` : (role || 'NONE');
+    const key = `getData:${normalizedSheet}:${a1}:${accessKey}`;
     const cached = this._getCached(key);
     if (cached) return cached;
 
@@ -369,8 +507,10 @@ default:
         rowIndex: index
       }));
       
-      this._setCached(key, withRowIndex);
-      return withRowIndex;
+            const filtered = this._filterRowsByAccess(normalizedSheet, withRowIndex);
+      
+this._setCached(key, filtered);
+      return filtered;
     });
   }
 
@@ -387,12 +527,13 @@ default:
       case 'Resultats_T1':
       case 'Resultats_T2': {
         const voix = obj.voix || {};
-        // Supporte soit des clés "L1..L5", soit des ids candidats (ex: 'L1') identiques
+        // Supporte soit des clés "L1..L6", soit des ids candidats (ex: 'L1') identiques
         const l1 = parseInt(voix.L1 ?? voix['L1'] ?? obj.L1_Voix ?? obj.L1 ?? 0) || 0;
         const l2 = parseInt(voix.L2 ?? voix['L2'] ?? obj.L2_Voix ?? obj.L2 ?? 0) || 0;
         const l3 = parseInt(voix.L3 ?? voix['L3'] ?? obj.L3_Voix ?? obj.L3 ?? 0) || 0;
         const l4 = parseInt(voix.L4 ?? voix['L4'] ?? obj.L4_Voix ?? obj.L4 ?? 0) || 0;
         const l5 = parseInt(voix.L5 ?? voix['L5'] ?? obj.L5_Voix ?? obj.L5 ?? 0) || 0;
+        const l6 = parseInt(voix.L6 ?? voix['L6'] ?? obj.L6_Voix ?? obj.L6 ?? 0) || 0;
 
         return [
           obj.bureauId ?? '',                 // A BureauID
@@ -406,9 +547,10 @@ default:
           l3,                                  // I L3_Voix
           l4,                                  // J L4_Voix
           l5,                                  // K L5_Voix
-          obj.saisiPar ?? '',                  // L SaisiPar
-          obj.validePar ?? '',                 // M ValidePar
-          obj.timestamp ?? ''                  // N Timestamp
+          l6,                                  // L L6_Voix
+          obj.saisiPar ?? '',                  // M SaisiPar
+          obj.validePar ?? '',                 // N ValidePar
+          obj.timestamp ?? ''                  // O Timestamp
         ];
       }
       case 'Participation_T1':
@@ -441,12 +583,22 @@ default:
 
   async appendRow(sheetName, rowData) {
     const normalizedSheet = this.normalizeSheetName(sheetName);
+
+    // Restriction BV : ne peut écrire que sur son bureau (Participation / Résultats)
+    if (normalizedSheet === 'Participation_T1' || normalizedSheet === 'Participation_T2' || normalizedSheet === 'Resultats_T1' || normalizedSheet === 'Resultats_T2') {
+      this._assertBureauAllowed(rowData?.bureauId);
+    }
     const row = this._toRow(sheetName, rowData);
     return await this.appendRows(normalizedSheet, [row]);
   }
 
   async updateRow(sheetName, rowIndex, rowData) {
     const normalizedSheet = this.normalizeSheetName(sheetName);
+
+    // Restriction BV : ne peut mettre à jour que son bureau (Participation / Résultats)
+    if (normalizedSheet === 'Participation_T1' || normalizedSheet === 'Participation_T2' || normalizedSheet === 'Resultats_T1' || normalizedSheet === 'Resultats_T2') {
+      this._assertBureauAllowed(rowData?.bureauId);
+    }
     const row = this._toRow(sheetName, rowData);
     const sheetRow = Number(rowIndex) + 2;
     const lastCol = this.colIndexToA1(Math.max(0, row.length - 1));
@@ -455,16 +607,25 @@ default:
     // cache invalidation simple
     this._cache.clear();
 
-    return await this.makeRequest(`/values/${encodeURIComponent(a1)}?valueInputOption=USER_ENTERED`, {
-      method: 'PUT',
-      body: JSON.stringify({ values: [row] }),
+    return await this.makeRequest(`/values:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        valueInputOption: 'USER_ENTERED',
+        data: [{ range: a1, values: [row] }],
+      }),
     });
   }
 
   async deleteRow(sheetName, rowIndex) {
     const normalizedSheet = this.normalizeSheetName(sheetName);
+
+    // Restriction BV : suppression interdite sur Participation / Résultats
+    const { role } = this._getAccessContext();
+    if (role === 'BV' && (normalizedSheet === 'Participation_T1' || normalizedSheet === 'Participation_T2' || normalizedSheet === 'Resultats_T1' || normalizedSheet === 'Resultats_T2')) {
+      throw new Error('Accès refusé : suppression interdite pour un bureau de vote');
+    }
     const sheetRow = Number(rowIndex) + 2;
-    const a1 = this.a1(normalizedSheet, `A${sheetRow}:Z${sheetRow}`);
+    const a1 = this.a1Path(normalizedSheet, `A${sheetRow}:Z${sheetRow}`);
 
     this._cache.clear();
 
@@ -483,6 +644,17 @@ default:
     }
 
     const sheetName = this.normalizeSheetName(arg1);
+
+    // Restriction BV : batch update uniquement sur son bureau (Participation / Résultats)
+    const { role: _roleBV, bureauId: _bvId } = this._getAccessContext();
+    if (_roleBV === 'BV' && (sheetName === 'Participation_T1' || sheetName === 'Participation_T2' || sheetName === 'Resultats_T1' || sheetName === 'Resultats_T2')) {
+      for (const r of (Array.isArray(arg2) ? arg2 : [])) {
+        const dataObj = r?.rowData ?? r?.data ?? {};
+        const target = dataObj?.bureauId;
+        this._assertBureauAllowed(target);
+      }
+    }
+
     const rows = Array.isArray(arg2) ? arg2 : [];
     const updates = rows.map((r) => {
       const rowIndex = r.rowIndex ?? r.index ?? 0;
@@ -799,7 +971,7 @@ async updateElectionState(keyOrObject, value) {
 
   async appendRows(sheetName, rows) {
     const normalizedSheet = this.normalizeSheetName(sheetName);
-    const a1 = this.a1(normalizedSheet, 'A:Z');
+    const a1 = this.a1Path(normalizedSheet, 'A:Z');
     this._cache.clear();
 
     // ici on garde /values/{range}:append (fonctionne bien car range simple A:Z, même si onglet accentué)
@@ -811,7 +983,7 @@ async updateElectionState(keyOrObject, value) {
 
   async clearSheet(sheetName) {
     const normalizedSheet = this.normalizeSheetName(sheetName);
-    const a1 = this.a1(normalizedSheet, 'A:Z');
+    const a1 = this.a1Path(normalizedSheet, 'A:Z');
     this._cache.clear();
     return await this.makeRequest(`/values/${encodeURIComponent(a1)}:clear`, { method: 'POST' });
   }

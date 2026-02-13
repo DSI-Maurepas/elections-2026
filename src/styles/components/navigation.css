@@ -711,21 +711,22 @@
     display: none !important;
   }
 
-  /* Masquer les blocs d'info dates et horaires, garder uniquement Base de données */
-  .nav-info .info-block:not(.info-block--auth) {
+  /* Masquer uniquement les blocs 1er tour et 2nd tour (sans classe spécifique) */
+  .nav-info .info-block:not(.info-block--auth):not(.info-block--access) {
     display: none !important;
   }
 
-  /* Le bloc Base de données prend toute la largeur en mobile */
-  .info-block--auth {
+  /* Les blocs Google et Accès côte à côte, chacun 50% de largeur */
+  .info-block--auth,
+  .info-block--access {
     width: 100%;
     max-width: none;
   }
 
-  /* Ajuster la grille d'info pour un seul bloc */
+  /* Ajuster la grille d'info pour 2 blocs côte à côte (Google | Accès) */
   .top-info-row {
-    grid-template-columns: 1fr !important;
-    gap: 0 !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.5rem !important;
   }
 }
 
@@ -849,5 +850,57 @@
 @media (min-width: 901px){
   .main-navigation .tour-indicator-floating{
     display: none !important;
+  }
+}
+
+
+/* =========================================================
+   AJUSTEMENTS UI (ciblés, non régressifs)
+   - Boutons Google / Quitter : même forme/typo que les nav-item
+   - Responsive BV : GOOGLE + ACCÈS côte à côte
+   ========================================================= */
+
+/* Boutons d'action alignés sur les nav-item (forme + typo) */
+.nav-item--google-auth,
+.nav-item--quit {
+  border-radius: 999px;
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Couleurs (sans impacter les autres nav-item) */
+.nav-item--google-auth {
+  background: rgba(46, 204, 113, 0.95); /* vert */
+  color: #ffffff;
+}
+
+.nav-item--google-auth:hover {
+  background: rgba(46, 204, 113, 1);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(0,0,0,0.26);
+}
+
+.nav-item--quit {
+  background: rgba(214, 69, 69, 0.95); /* rouge */
+  color: #ffffff;
+}
+
+.nav-item--quit:hover {
+  background: rgba(214, 69, 69, 1);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(0,0,0,0.26);
+}
+
+/* Responsive : uniquement profil BV */
+@media (max-width: 560px) {
+  .main-navigation.is-bv .top-info-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Les 2 premiers blocs (dates Tour 1 / Tour 2) restent pleine largeur */
+  .main-navigation.is-bv .top-info-row .info-block:nth-child(1),
+  .main-navigation.is-bv .top-info-row .info-block:nth-child(2) {
+    grid-column: 1 / -1;
   }
 }

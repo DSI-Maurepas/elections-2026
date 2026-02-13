@@ -6,6 +6,14 @@
 // - sérialiser systématiquement les payloads complexes en JSON string
 // - fournir les fonctions attendues par l'app (ex: setupGlobalErrorHandler)
 //
+// Méthodes exposées:
+// - log(action, details)           → écriture AuditLog (méthode principale)
+// - logAction(action, details)     → alias de log() (utilisé par ResultatsSaisieBureau)
+// - logExport(...)                 → écriture AuditLog (exports PDF/Excel)
+// - logError(severity, source, errLike, context) → écriture ErrorLog
+// - logCritical(source, message, stack)          → alias logError('CRITICAL', ...)
+// - setupGlobalErrorHandler()      → capture globale des erreurs JS
+//
 // Dépendances:
 // - googleSheetsService.appendRow(...) pour AuditLog
 // - googleSheetsService.logError(...) (si disponible) pour ErrorLog
@@ -62,16 +70,36 @@ class AuditService {
 
   /**
    * Ajoute une ligne dans la feuille AuditLog.
-   * Colonnes attendues (recommandé):
-   * A timestamp | B user | C action | D details
+   * Colonnes : A timestamp | B user | C action | D details (JSON)
+   *
+   * ⚠️ Ne doit JAMAIS faire planter l'app — toute erreur est attrapée et loguée en console.
    */
   async log(action, details = {}) {
-    const ts = new Date().toISOString();
-    const user = getUserLabel();
-    const detailsJson = safeJsonStringify(details);
+    try {
+      const ts = new Date().toISOString();
+      const user = getUserLabel();
+      const detailsJson = safeJsonStringify(details);
 
-    // IMPORTANT : on passe un ARRAY pour garantir l'ordre des colonnes
-    return await googleSheetsService.appendRow(AUDIT_SHEET, [ts, user, action || '', detailsJson]);
+      console.log('[AUDIT] ➡️ Écriture en cours:', { action, user, ts, detailsJson: detailsJson.substring(0, 100) });
+
+      // IMPORTANT : on passe un ARRAY pour garantir l'ordre des colonnes
+      const result = await googleSheetsService.appendRow(AUDIT_SHEET, [ts, user, action || '', detailsJson]);
+
+      console.log('[AUDIT] ✅ Écriture réussie:', result);
+      return result;
+    } catch (e) {
+      // L'audit ne doit jamais bloquer l'application
+      console.error('[AUDIT] ❌ Écriture AuditLog échouée:', e, '| action:', action);
+      return null;
+    }
+  }
+
+  /**
+   * Alias de log() — utilisé par ResultatsSaisieBureau et d'autres composants.
+   * Signature identique : logAction(action, details)
+   */
+  async logAction(action, details = {}) {
+    return await this.log(action, details);
   }
 
   /**
@@ -116,7 +144,6 @@ class AuditService {
   async logError(severity, source, errLike, context = {}) {
     try {
       const { message, stack } = normalizeError(errLike);
-      const ctxJson = safeJsonStringify(context);
 
       if (typeof googleSheetsService.logError === 'function') {
         // logError gère déjà la sérialisation du context
@@ -129,13 +156,21 @@ class AuditService {
         source: source || 'APP',
         message,
         stack,
-        context: ctxJson,
+        context: safeJsonStringify(context),
       });
     } catch (e) {
       // Silence: l'audit ne doit jamais bloquer l'appli
       console.warn('AuditService.logError failed:', e);
       return null;
     }
+  }
+
+  /**
+   * Alias de logError('CRITICAL', ...) — utilisé par hooks/index.js (useGoogleSheets).
+   * Signature : logCritical(source, message, stack)
+   */
+  async logCritical(source, message, stack = '') {
+    return await this.logError('CRITICAL', source, { message, stack });
   }
 
   /**

@@ -200,7 +200,7 @@ const SiegesCommunautaire = ({ electionState }) => {
       <div className="explication">
         <h4>Méthode de calcul :</h4>
         <p>Prime majoritaire : 50% des sièges (arrondi au supérieur) à la liste en tête</p>
-        <p>Reste : proportionnelle à la plus forte moyenne (D’Hondt), seuil 5%</p>
+        <p>Reste : proportionnelle à la plus forte moyenne, seuil 5%</p>
       </div>
     </div>
   );

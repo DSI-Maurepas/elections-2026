@@ -1,0 +1,104 @@
+Voici un script .sh prêt à lancer, clair, commenté et adapté à Git Bash sous Windows, pour pousser ton dépôt local
+C:/dev/elections-municipales vers GitHub / main.
+_____________________________________________________________________________________________
+
+🟢 Script STANDARD (recommandé)
+
+➡️ Commit + push sans forcer (sécurisé)
+
+📄 push_main.sh
+#!/bin/bash
+
+# Arrêt immédiat en cas d’erreur
+set -e
+
+echo "=== Déploiement vers GitHub /main ==="
+
+# 1. Se placer dans le dépôt
+cd /c/dev/elections-municipales || {
+  echo "❌ Répertoire introuvable"
+  exit 1
+}
+
+# 2. Vérifier la branche
+CURRENT_BRANCH=$(git branch --show-current)
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo "❌ Tu n'es pas sur la branche main (actuelle : $CURRENT_BRANCH)"
+  exit 1
+fi
+
+# 3. Afficher l’état
+echo "=== État du dépôt ==="
+git status
+
+# 4. Ajouter tous les fichiers
+git add .
+
+# 5. Commit (message horodaté)
+COMMIT_MSG="Update $(date '+%Y-%m-%d %H:%M')"
+git commit -m "$COMMIT_MSG" || echo "ℹ️ Rien à committer"
+
+# 6. Push
+git push origin main
+
+echo "✅ Push terminé avec succès"
+
+_____________________________________________________________________________________________
+
+🔴 Script FORCÉ (à utiliser en connaissance de cause)
+
+➡️ Écrase origin/main avec ton local
+
+📄 push_main_force.sh
+#!/bin/bash
+
+set -e
+
+echo "⚠️ PUSH FORCÉ VERS origin/main ⚠️"
+
+cd /c/dev/elections-municipales || exit 1
+
+CURRENT_BRANCH=$(git branch --show-current)
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo "❌ Tu n'es pas sur main"
+  exit 1
+fi
+
+git status
+read -p "❗ Confirmer le push forcé ? (oui/NON) : " CONFIRM
+if [ "$CONFIRM" != "oui" ]; then
+  echo "❌ Annulé"
+  exit 0
+fi
+
+git add .
+git commit -m "Force update $(date '+%Y-%m-%d %H:%M')" || true
+git push origin main --force
+
+echo "✅ Push forcé terminé"
+
+_____________________________________________________________________________________________
+
+▶️ Utilisation
+
+Dans Git Bash :
+
+chmod +x push_main.sh
+./push_main.sh
+
+
+ou
+
+chmod +x push_main_force.sh
+./push_main_force.sh
+
+_____________________________________________________________________________________________
+
+🧠 Recommandation pro (élections)
+
+Avant un gros push :
+
+git tag backup-$(date '+%Y%m%d-%H%M')
+git push origin --tags
+
+👉 Tu conserves une trace officielle.

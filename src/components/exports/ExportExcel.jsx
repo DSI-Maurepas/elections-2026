@@ -1,12 +1,15 @@
 import React from 'react';
 import exportService from '../../services/exportService';
 import uiService from '../../services/uiService';
+import auditService from '../../services/auditService';
 
 const ExportExcel = ({ electionState}) => {
   const handleExport = async (type) => {
     try {
       await exportService.exportExcel(type, electionState?.tourActuel || 1);
-    } catch (error) {
+      // Audit non bloquant
+      try { await auditService?.logExport?.('EXPORT', 'EXCEL', { type, tour: electionState?.tourActuel || 1 }); } catch (_) {}
+} catch (error) {
       uiService.toast('error', { title: 'Export', message: `Erreur : ${error.message}` });
 }
   };

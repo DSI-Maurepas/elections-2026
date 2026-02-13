@@ -28,8 +28,17 @@ const ResultatsValidation = ({ electionState}) => {
         const nuls = Number(bureauResultat.nuls) || 0;
         const exprimes = Number(bureauResultat.exprimes) || 0;
 
+        // Somme des voix (toutes listes) : la saisie enregistre un objet "voix" (listeId -> nombre)
+        // IMPORTANT : ce contrôle doit remonter dans la validation globale (Tour 1 / Tour 2).
+        const voixObj = bureauResultat.voix && typeof bureauResultat.voix === 'object' ? bureauResultat.voix : null;
+        const sommeVoix = voixObj
+          ? Object.values(voixObj).reduce((acc, v) => acc + (Number(v) || 0), 0)
+          : 0;
+
         if (votants > inscrits) errors.push('Votants > inscrits');
         if (blancs + nuls + exprimes !== votants) errors.push('Somme ≠ votants');
+        // Contrôle "Somme des voix = Exprimés" (affiché dans le bloc de saisie bureau) => doit remonter ici
+        if (voixObj && sommeVoix !== exprimes) errors.push('Somme des voix ≠ exprimés');
         if (exprimes === 0 && votants > 0) warnings.push('Aucun exprimé');
       }
 
@@ -88,13 +97,29 @@ const ResultatsValidation = ({ electionState}) => {
             padding: 10px 10px;
             box-sizing: border-box;
           }
+
+          .resultats-validation .rv-subhead{
+            display: block;
+            margin-top: 2px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: lowercase;
+            opacity: 0.9;
+            line-height: 1.15;
+          }
+          .resultats-validation .validation-table.modern th:nth-child(2){
+            white-space: nowrap;
+            font-size: 12px;
+          }
+
           .resultats-validation .validation-table.modern th:nth-child(1),
           .resultats-validation .validation-table.modern td:nth-child(1){
-            width: 36%;
+            width: calc(36% - 40px);
           }
           .resultats-validation .validation-table.modern th:nth-child(2),
           .resultats-validation .validation-table.modern td:nth-child(2){
-            width: 64px;
+            width: 104px;
+            min-width: 104px;
             text-align: center;
           }
           .resultats-validation .validation-table.modern th:nth-child(3),
@@ -138,7 +163,7 @@ const ResultatsValidation = ({ electionState}) => {
             padding: 10px 10px 6px;
             border-radius: 16px;
             border: 1px solid rgba(15, 23, 42, 0.12);
-            box-shadow: 0 12px 24px rgba(2, 6, 23, 0.08);
+            box-shadow: 0 12px 24px rgba(2, 6, 23, 0.28);
             background: rgba(255,255,255,0.96);
           }
 
@@ -166,7 +191,7 @@ const ResultatsValidation = ({ electionState}) => {
             font-weight: 900;
           }
           .resultats-validation .bureau-nom{
-            font-weight: 800;
+            font-weight: 600;
           }
 
           /* Lignes label/valeur */
@@ -193,40 +218,106 @@ const ResultatsValidation = ({ electionState}) => {
         }
       `}</style>
 
-      <h3 className="validation-title">
+      <h4 className="validation-title">
         ✅ Validation des résultats - Tour {electionState.tourActuel}
-      </h3>
+      </h4>
 
       {/* Bandeau global */}
       <div className={`validation-banner ${bannerStateClass}`}>
         <div className="banner-icon">{bannerIcon}</div>
         <div className="banner-content">
           <div className="banner-title">
-            {allValid ? 'Tous les résultats sont validés' : stats.errorCount > 0 ? 'Erreurs à corriger' : 'Validation requise'}
-          </div>
+            {allValid ? 'Tous les résultats sont validés 🟢' : stats.errorCount > 0 ? 'Erreurs à corriger   ⮕' : 'Validation requise 🟠'}
+          <span className="validation-info-buttons" style={{ display: 'inline-flex', alignItems: 'center', gap: '12px', marginLeft: '12px' }}>
+            <button
+              type="button"
+              title="Nombre de bureaux déclarés"
+              className="info-btn info-btn-bureaux"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 14px',
+                minHeight: '36px',
+                borderRadius: '999px',
+                border: '2px solid #2b7cff',
+                background: 'linear-gradient(135deg, #a2cbf9 30%, #2b7cff 90%)',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '14px',
+                lineHeight: 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              🏛️ Bureaux : {stats.declaredCount} / {bureaux.length}
+            </button>
 
-          {/* Petits blocs (chips) : 1 ligne en écran / wrap en mobile (géré par CSS) */}
-          <div className="banner-chips">
-            <span className="chip">🏛️ Bureaux : {stats.declaredCount} / {bureaux.length}</span>
-            <span className="chip chip-error">🔴 Erreurs : {stats.errorCount}</span>
-            <span className="chip chip-warning">🟠 Avertissements : {stats.warningCount}</span>
+            <button
+              type="button"
+              title="Nombre d'erreurs bloquantes"
+              className="info-btn info-btn-erreurs"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 14px',
+                minHeight: '36px',
+                borderRadius: '999px',
+                border: '2px solid #ff3b3b',
+                background: 'linear-gradient(135deg, #fac3c3 20%, #ff7a7a 70%)',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '14px',
+                lineHeight: 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ❌ Erreurs : {stats.errorCount}
+            </button>
+
+            <button
+              type="button"
+              title="Nombre d'avertissements non bloquants"
+              className="info-btn info-btn-avertissements"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 14px',
+                minHeight: '36px',
+                borderRadius: '999px',
+                border: '2px solid #ff8a00',
+                background: 'linear-gradient(135deg, #f9d58b 30%, #f9bd43 60%)',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '14px',
+                lineHeight: 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ⚠️ Avertissements : {stats.warningCount}
+            </button>
+          </span>
           </div>
         </div>
       </div>
 
-      {/* Tableau */}
+      {/* Tableau — uniquement les bureaux en erreur ou avertissement */}
+      {(stats.errorCount > 0 || stats.warningCount > 0) && (
       <div className="validation-table-wrap">
         <table className="validation-table modern">
           <thead>
             <tr>
               <th>Bureau</th>
               <th>Statut</th>
-              <th>Erreurs</th>
-              <th>Avertissements</th>
+              <th>Erreurs<br /><span className="rv-subhead">incohérence réglementaire (mathématiquement fausse)</span></th>
+              <th>Avertissements<br /><span className="rv-subhead">situation anormale mais mathématiquement valide</span></th>
             </tr>
           </thead>
           <tbody>
-            {validation.map((v) => (
+            {validation
+              .filter((v) => v.status === 'error' || v.status === 'warning')
+              .map((v) => (
               <tr key={v.id} className={`row-${v.status}`}>
                 <td data-label="Bureau" className="cell-bureau">
                   <div className="bureau-main">
@@ -234,10 +325,8 @@ const ResultatsValidation = ({ electionState}) => {
                   </div>
                 </td>
                 <td data-label="Statut" className="cell-statut">
-                  {v.status === 'success' && <span className="status-emoji" title="Conforme" aria-label="Conforme">🟢</span>}
                   {v.status === 'error' && <span className="status-emoji" title="Erreurs" aria-label="Erreurs">🔴</span>}
                   {v.status === 'warning' && <span className="status-emoji" title="À vérifier" aria-label="À vérifier">🟠</span>}
-                  {v.status === 'pending' && <span className="status-emoji" title="En attente" aria-label="En attente">⏳</span>}
                 </td>
                 <td data-label="Erreurs" className="cell-erreurs">{v.errors.length ? v.errors.join(', ') : '—'}</td>
                 <td data-label="Avertissements" className="cell-avert">{v.warnings.length ? v.warnings.join(', ') : '—'}</td>
@@ -246,6 +335,7 @@ const ResultatsValidation = ({ electionState}) => {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 };
