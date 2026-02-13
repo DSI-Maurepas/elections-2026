@@ -704,11 +704,12 @@ input:focus, select:focus, textarea:focus {
   background: #f8f9fa;
   border-radius: 8px;
   margin: 1.5rem 0;
-  overflow: visible; /* sécurité anti-coupe */
+  overflow-x: auto;    /* ← réactive le scroll horizontal */
+  overflow-y: visible; /* sécurité anti-coupe */
 }
 
 .chart-bar {
-  flex: 1;
+  flex: 0 0 42px;  /* largeur fixe minimale */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -726,7 +727,7 @@ input:focus, select:focus, textarea:focus {
   border-radius: 10px;
   padding: 0.25rem;
   box-sizing: border-box;
-  overflow: visible; /* sécurité anti-coupe du % */
+  overflow-y: visible; /* sécurité anti-coupe du % */
 }
 
 .bar {
@@ -1647,7 +1648,7 @@ input:focus, select:focus, textarea:focus {
 .evolution-section .evolution-chart {
   width: 100%;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 8px; /* place pour la scrollbar sans cacher */
 }
@@ -1659,6 +1660,17 @@ input:focus, select:focus, textarea:focus {
 .evolution-section .evolution-chart .chart-bar {
   flex: 0 0 auto;
   min-width: 62px; /* garantit la lisibilité des heures */
+}
+
+/* MOBILE: forcer une seule ligne + débordement horizontal */
+@media (max-width: 768px) {
+  .evolution-section .evolution-chart {
+    flex-wrap: nowrap;              /* <-- clé */
+  }
+
+  .evolution-section .evolution-chart .chart-bar {
+    flex: 0 0 62px;                 /* <-- clé (largeur réelle, pas juste auto) */
+  }
 }
 
 /* Desktop : on garde l'affichage sans scroll si possible */
@@ -1918,7 +1930,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .chart-bar {
-  flex: 1;
+  flex: 0 0 42px;  /* largeur fixe minimale */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3740,8 +3752,45 @@ input:focus, select:focus, textarea:focus {
 .ui-toast.warn    { background: linear-gradient(135deg, #f59e0b, #d97706); color: #1e293b; }
 .ui-toast.info    { background: linear-gradient(135deg, #3b82f6, #2563eb); }
 
-/* TEST VERDICT — à laisser 1 minute puis on nettoie */
-.evolution-section .evolution-chart{
-  height: 200px !important;
-  overflow: visible !important;
+/* =========================================================
+   FIX FINAL — Évolution horaire (ParticipationStats)
+   Objectif :
+   - Le % (ex: 20h) n'est jamais coupé en hauteur
+   - Scroll horizontal en responsive (barres sur une seule ligne)
+   - Aucun impact sur d'autres pages (scope .participation-stats)
+   ========================================================= */
+
+.participation-stats .evolution-chart {
+  /* garantir que les libellés au-dessus des barres ne sont pas coupés */
+  overflow-y: visible;
+}
+
+@media (max-width: 768px) {
+  .participation-stats .evolution-chart {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+  }
+
+  .participation-stats .chart-bar {
+    flex: 0 0 62px !important;
+    min-width: 62px !important;
+  }
+}
+
+   - Scroll horizontal en responsive
+   - Empêche l’écrasement des barres (donc 20h visible)
+   - Scopé ParticipationStats (zéro impact ailleurs)
+   ========================================================= */
+
+.participation-stats .evolution-chart {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  flex-wrap: nowrap;
+}
+
+.participation-stats .chart-bar {
+  flex: 0 0 62px;
+  min-width: 62px;
 }
