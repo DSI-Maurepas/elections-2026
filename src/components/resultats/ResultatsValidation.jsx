@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 
 const ResultatsValidation = ({ electionState}) => {
@@ -7,19 +7,57 @@ const ResultatsValidation = ({ electionState}) => {
     electionState.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2'
   );
 
+  // Anti-quota: évite les appels concurrents + backoff en cas de 429
+  const inFlight = useRef(false);
+  const pollMs = useRef(12000);
+
   useEffect(() => {
-    // Chargement initial
-    loadBureaux();
-    loadResultats();
-    
-    // Polling automatique toutes les 3 secondes pour mise à jour en temps réel
-    const interval = setInterval(() => {
-      loadBureaux();
-      loadResultats();
-    }, 3000);
-    
-    // Nettoyage de l'interval au démontage du composant
-    return () => clearInterval(interval);
+    // Objectif: éviter le dépassement de quota Google Sheets (HTTP 429)
+    // - Pas de polling agressif (A:Z sur Resultats_* et Bureaux est coûteux)
+    // - Pas de requêtes concurrentes
+    // - Backoff automatique en cas de 429
+    const BASE_POLL_MS = 12000; // 12s = "quasi temps réel" sans cramer le quota
+    const MAX_POLL_MS = 60000;  // plafond 60s en backoff
+
+    let cancelled = false;
+    let timeoutId = null;
+
+    const runCycle = async () => {
+      if (cancelled) return;
+
+      // Une requête est déjà en cours: on réessaie au prochain tick
+      if (inFlight.current) {
+        timeoutId = setTimeout(runCycle, pollMs.current);
+        return;
+      }
+
+      inFlight.current = true;
+      try {
+        const results = await Promise.allSettled([loadBureaux(), loadResultats()]);
+
+        // Détection 429 (quota)
+        const has429 = results.some((r) => {
+          if (r.status !== 'rejected') return false;
+          const err = r.reason;
+          const msg = err?.message || String(err || '');
+          return msg.includes('HTTP 429') || msg.includes('Quota exceeded') || msg.includes('Too Many Requests');
+        });
+
+        pollMs.current = has429 ? Math.min(pollMs.current * 2, MAX_POLL_MS) : BASE_POLL_MS;
+      } finally {
+        inFlight.current = false;
+        if (!cancelled) timeoutId = setTimeout(runCycle, pollMs.current);
+      }
+    };
+
+    // Chargement initial + démarrage du polling "safe"
+    pollMs.current = BASE_POLL_MS;
+    runCycle();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [loadBureaux, loadResultats]);
 
   const validation = useMemo(() => {
