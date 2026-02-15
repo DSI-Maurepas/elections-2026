@@ -2,6 +2,8 @@
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 import authService, { loginWithCode, getAuthState, logoutAccess, isBV } from "./services/authService";
 import uiService from "./services/uiService";
+import googleSheetsService from "./services/googleSheetsService";
+import auditService from "./services/auditService";
 import { useElectionState } from "./hooks/useElectionState";
 
 import Navigation from "./components/layout/Navigation";
@@ -92,6 +94,13 @@ export default function App() {
     cancelText: "Annuler",
     _resolve: null,
   });
+
+  // Modals de succès personnalisés (centré, gros, 10 secondes)
+  const [showUnlockT1Success, setShowUnlockT1Success] = useState(false);
+  const [showUnlockT2Success, setShowUnlockT2Success] = useState(false);
+  const [showTour1ActiveSuccess, setShowTour1ActiveSuccess] = useState(false);
+  const [showTour2ActiveSuccess, setShowTour2ActiveSuccess] = useState(false);
+  const [unlockCount, setUnlockCount] = useState(0);
 
   const showToast = ({ type = "info", title = "", message = "", durationMs = 4000 }) => {
     const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -260,15 +269,19 @@ export default function App() {
             {renderAuthGate()}
             {isAuthenticated && (
               <>
+                {/* 1. Tableau des bureaux + Formulaire de saisie */}
                 <ResultatsSaisieBureau electionState={safeElectionState} />
-                <ResultatsConsolidation electionState={safeElectionState} />
-                {/* ⚠️ CORRECTION : Masquer Validation et Classement pour les BV */}
+                
+                {/* 2. Validation et Classement (masqués pour les BV) */}
                 {!isBureauVote && (
                   <>
                     <ResultatsValidation electionState={safeElectionState} />
                     <ResultatsClassement electionState={safeElectionState} />
                   </>
                 )}
+                
+                {/* 3. Consolidation communale EN DERNIER (statistiques) */}
+                <ResultatsConsolidation electionState={safeElectionState} />
               </>
             )}
           </>
@@ -308,8 +321,8 @@ export default function App() {
             {renderAuthGate()}
             {isAuthenticated && (
               <>
-                <ExportPDF />
-                <ExportExcel />
+                <ExportPDF electionState={safeElectionState} />
+                <ExportExcel electionState={safeElectionState} />
               </>
             )}
           </>
@@ -320,71 +333,281 @@ export default function App() {
             {renderAuthGate()}
             {isAuthenticated && (
               <>
-                {/* === GESTION DES TOURS === */}
-                <div className="card" style={{ marginBottom: 24, border: '2px solid #e74c3c', background: '#fdf2f2' }}>
-                  <h2 style={{ color: '#c0392b', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    🔄 Gestion des Tours
-                  </h2>
-                  <p style={{ marginBottom: 16, color: '#555' }}>
-                    Tour actuel : <strong style={{ fontSize: '1.2em', color: safeElectionState.tourActuel === 1 ? '#2563eb' : '#dc2626' }}>
-                      Tour {safeElectionState.tourActuel}
-                    </strong>
-                    {safeElectionState.tour1Verrouille && safeElectionState.tourActuel === 1 && (
-                      <span style={{ marginLeft: 12, color: '#e67e22' }}>🔒 Tour 1 verrouillé</span>
-                    )}
-                    {safeElectionState.tour2Verrouille && safeElectionState.tourActuel === 2 && (
-                      <span style={{ marginLeft: 12, color: '#e67e22' }}>🔒 Tour 2 verrouillé</span>
-                    )}
-                  </p>
-                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                    {safeElectionState.tourActuel === 2 && (
-                      <button
-                        className="btn btn-warning"
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', fontSize: '1em', fontWeight: 600 }}
-                        onClick={async () => {
-                          const ok = await uiService.confirm({
-                            title: '⚠️ Retour au Tour 1',
-                            message: 'Voulez-vous vraiment revenir au Tour 1 ?\n\nLes données du Tour 2 seront conservées mais le tour actif sera le Tour 1.',
-                            confirmText: 'Oui, revenir au Tour 1',
-                            cancelText: 'Annuler'
-                          });
-                          if (!ok) return;
-                          try {
-                            await revenirPremierTour();
-                            uiService.toast('success', { title: 'Tour 1 actif', message: 'Retour au premier tour effectué.' });
-                          } catch (e) {
-                            uiService.toast('error', { title: 'Erreur', message: 'Retour Tour 1 échoué : ' + (e?.message || e) });
-                          }
-                        }}
-                      >
-                        ⬅️ Retour au Tour 1
-                      </button>
-                    )}
-                    {safeElectionState.tourActuel === 1 && (
-                      <button
-                        className="btn btn-danger"
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', fontSize: '1em', fontWeight: 600 }}
-                        onClick={async () => {
-                          const ok = await uiService.confirm({
-                            title: '⚠️ Passage au Tour 2',
-                            message: 'Voulez-vous vraiment passer au Tour 2 ?\n\nCette action changera le tour actif de l\'élection.',
-                            confirmText: 'Oui, passer au Tour 2',
-                            cancelText: 'Annuler'
-                          });
-                          if (!ok) return;
-                          try {
-                            await passerSecondTour();
-                            uiService.toast('success', { title: 'Tour 2 actif', message: 'Passage au second tour effectué.' });
-                          } catch (e) {
-                            uiService.toast('error', { title: 'Erreur', message: 'Passage Tour 2 échoué : ' + (e?.message || e) });
-                          }
-                        }}
-                      >
-                        ➡️ Forcer passage Tour 2
-                      </button>
-                    )}
+                {/* === LIGNE AVEC 3 BLOCS : GESTION TOURS + DÉVERROUILLAGE T1 + T2 === */}
+                <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
+                  
+                  {/* BLOC 1 : GESTION DES TOURS (2/3 de largeur) */}
+                  <div style={{ flex: '2 1 0' }}>
+                    <div className="card" style={{ border: '2px solid #e74c3c', background: '#fdf2f2', height: '100%' }}>
+                      <h2 style={{ color: '#c0392b', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        🔄 Gestion des Tours
+                      </h2>
+                      <p style={{ marginBottom: 16, color: '#555' }}>
+                        Tour actuel : <strong style={{ fontSize: '1.2em', color: safeElectionState.tourActuel === 1 ? '#2563eb' : '#dc2626' }}>
+                          Tour {safeElectionState.tourActuel}
+                        </strong>
+                        {safeElectionState.tour1Verrouille && safeElectionState.tourActuel === 1 && (
+                          <span style={{ marginLeft: 12, color: '#e67e22' }}>🔒 Tour 1 verrouillé</span>
+                        )}
+                        {safeElectionState.tour2Verrouille && safeElectionState.tourActuel === 2 && (
+                          <span style={{ marginLeft: 12, color: '#e67e22' }}>🔒 Tour 2 verrouillé</span>
+                        )}
+                      </p>
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        {safeElectionState.tourActuel === 2 && (
+                          <button
+                            className="btn btn-warning"
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', fontSize: '1em', fontWeight: 600 }}
+                            onClick={async () => {
+                              const ok = await uiService.confirm({
+                                title: '⚠️ Retour au Tour 1',
+                                message: 'Voulez-vous vraiment revenir au Tour 1 ?\n\nLes données du Tour 2 seront conservées mais le tour actif sera le Tour 1.',
+                                confirmText: 'Oui, revenir au Tour 1',
+                                cancelText: 'Annuler'
+                              });
+                              if (!ok) return;
+                              try {
+                                await revenirPremierTour();
+                                setShowTour1ActiveSuccess(true);
+                                setTimeout(() => {
+                                  setShowTour1ActiveSuccess(false);
+                                  window.location.reload();
+                                }, 10000);
+                              } catch (e) {
+                                uiService.toast('error', { title: 'Erreur', message: 'Retour Tour 1 échoué : ' + (e?.message || e) });
+                              }
+                            }}
+                          >
+                            ⬅️ Retour au Tour 1
+                          </button>
+                        )}
+                        {safeElectionState.tourActuel === 1 && (
+                          <button
+                            className="btn btn-danger"
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', fontSize: '1em', fontWeight: 600 }}
+                            onClick={async () => {
+                              const ok = await uiService.confirm({
+                                title: '⚠️ Passage au Tour 2',
+                                message: 'Voulez-vous vraiment passer au Tour 2 ?\n\nCette action changera le tour actif de l\'élection.',
+                                confirmText: 'Oui, passer au Tour 2',
+                                cancelText: 'Annuler'
+                              });
+                              if (!ok) return;
+                              try {
+                                await passerSecondTour();
+                                setShowTour2ActiveSuccess(true);
+                                setTimeout(() => {
+                                  setShowTour2ActiveSuccess(false);
+                                  window.location.reload();
+                                }, 10000);
+                              } catch (e) {
+                                uiService.toast('error', { title: 'Erreur', message: 'Passage Tour 2 échoué : ' + (e?.message || e) });
+                              }
+                            }}
+                          >
+                            ➡️ Forcer passage Tour 2
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* BLOC 2 : DÉVERROUILLAGE TOUR 1 (1/6 de largeur) */}
+                  <div style={{ flex: '1 1 0' }}>
+                    <div 
+                      className="card"
+                      style={{
+                        background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+                        border: '2px solid #047857',
+                        padding: 20,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minHeight: 140,
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s, box-shadow 0.2s',
+                        height: '100%'
+                      }}
+                      onClick={async () => {
+                        const ok = await uiService.confirm({
+                          title: '⚠️ Déverrouillage global - Tour 1',
+                          message: 'Voulez-vous annuler TOUS les verrouillages (BV et Admin) pour le Tour 1 ?\n\n⚠️ Les 13 bureaux pourront à nouveau modifier leurs résultats.',
+                          confirmText: '🔓 Déverrouiller tous les bureaux',
+                          cancelText: 'Annuler'
+                        });
+                        if (!ok) return;
+                        try {
+                          // 1. Charger les données du Tour 1
+                          const resultatsData = await googleSheetsService.getData('Resultats_T1');
+                          
+                          // 2. Effacer validePar et timestamp pour TOUS les bureaux
+                          const updates = [];
+                          for (let i = 0; i < resultatsData.length; i++) {
+                            const bureau = resultatsData[i];
+                            
+                            const rowData = {
+                              ...bureau,
+                              validePar: '',
+                              timestamp: ''
+                            };
+                            
+                            updates.push({
+                              rowIndex: i,
+                              rowData: rowData
+                            });
+                          }
+                          
+                          // 3. Appliquer les mises à jour
+                          if (updates.length > 0) {
+                            await googleSheetsService.batchUpdate('Resultats_T1', updates);
+                          }
+                          
+                          // 4. Retirer la validation admin
+                          await googleSheetsService.setConfig('VALIDATION_ADMIN_T1', 'FALSE');
+                          
+                          // 5. Log
+                          await auditService.log('ADMIN_DEVERROUILLAGE_GLOBAL', {
+                            tour: 1,
+                            action: 'RESET_TOUS_BUREAUX',
+                            count: updates.length
+                          });
+                          
+                          // Afficher le modal de succès personnalisé
+                          setUnlockCount(updates.length);
+                          setShowUnlockT1Success(true);
+                          
+                          // Recharger la page après 10 secondes
+                          setTimeout(() => window.location.reload(), 10000);
+                        } catch (e) {
+                          console.error('Erreur déverrouillage T1:', e);
+                          uiService.toast('error', { title: 'Erreur', message: 'Déverrouillage échoué : ' + (e?.message || e) });
+                        }
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 6px 20px rgba(4, 120, 87, 0.4)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
+                      <div style={{ fontSize: 48, marginBottom: 12 }}>🔓</div>
+                      <div style={{
+                        color: '#fff',
+                        fontWeight: 800,
+                        fontSize: 14,
+                        textAlign: 'center',
+                        lineHeight: 1.4
+                      }}>
+                        Annuler les<br />
+                        verrouillages<br />
+                        BV1 à BV13<br />
+                        <span style={{ fontSize: 16 }}>TOUR 1</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* BLOC 3 : DÉVERROUILLAGE TOUR 2 (1/6 de largeur) */}
+                  <div style={{ flex: '1 1 0' }}>
+                    <div 
+                      className="card"
+                      style={{
+                        background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)',
+                        border: '2px solid #2563eb',
+                        padding: 20,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minHeight: 140,
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s, box-shadow 0.2s',
+                        height: '100%'
+                      }}
+                      onClick={async () => {
+                        const ok = await uiService.confirm({
+                          title: '⚠️ Déverrouillage global - Tour 2',
+                          message: 'Voulez-vous annuler TOUS les verrouillages (BV et Admin) pour le Tour 2 ?\n\n⚠️ Les 13 bureaux pourront à nouveau modifier leurs résultats.',
+                          confirmText: '🔓 Déverrouiller tous les bureaux',
+                          cancelText: 'Annuler'
+                        });
+                        if (!ok) return;
+                        try {
+                          // 1. Charger les données du Tour 2
+                          const resultatsData = await googleSheetsService.getData('Resultats_T2');
+                          
+                          // 2. Effacer validePar et timestamp pour TOUS les bureaux
+                          const updates = [];
+                          for (let i = 0; i < resultatsData.length; i++) {
+                            const bureau = resultatsData[i];
+                            
+                            const rowData = {
+                              ...bureau,
+                              validePar: '',
+                              timestamp: ''
+                            };
+                            
+                            updates.push({
+                              rowIndex: i,
+                              rowData: rowData
+                            });
+                          }
+                          
+                          // 3. Appliquer les mises à jour
+                          if (updates.length > 0) {
+                            await googleSheetsService.batchUpdate('Resultats_T2', updates);
+                          }
+                          
+                          // 4. Retirer la validation admin
+                          await googleSheetsService.setConfig('VALIDATION_ADMIN_T2', 'FALSE');
+                          
+                          // 5. Log
+                          await auditService.log('ADMIN_DEVERROUILLAGE_GLOBAL', {
+                            tour: 2,
+                            action: 'RESET_TOUS_BUREAUX',
+                            count: updates.length
+                          });
+                          
+                          // Afficher le modal de succès personnalisé
+                          setUnlockCount(updates.length);
+                          setShowUnlockT2Success(true);
+                          
+                          // Recharger la page après 10 secondes
+                          setTimeout(() => window.location.reload(), 10000);
+                        } catch (e) {
+                          console.error('Erreur déverrouillage T2:', e);
+                          uiService.toast('error', { title: 'Erreur', message: 'Déverrouillage échoué : ' + (e?.message || e) });
+                        }
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 6px 20px rgba(37, 99, 235, 0.4)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
+                      <div style={{ fontSize: 48, marginBottom: 12 }}>🔓</div>
+                      <div style={{
+                        color: '#fff',
+                        fontWeight: 800,
+                        fontSize: 14,
+                        textAlign: 'center',
+                        lineHeight: 1.4
+                      }}>
+                        Annuler les<br />
+                        verrouillages<br />
+                        BV1 à BV13<br />
+                        <span style={{ fontSize: 16 }}>TOUR 2</span>
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
+                {/* FIN LIGNE AVEC 3 BLOCS */}
                 <ConfigBureaux />
                 <ConfigCandidats />
                 <AuditLog />
@@ -458,6 +681,170 @@ export default function App() {
                 {uiConfirm.confirmText || "Confirmer"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal succès déverrouillage Tour 1 - VERT FONCÉ */}
+      {showUnlockT1Success && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: 20
+          }}
+          onClick={() => setShowUnlockT1Success(false)}
+        >
+          <div style={{
+            background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+            color: '#fff',
+            borderRadius: 16,
+            width: '90%',
+            maxWidth: 550,
+            padding: 50,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 80, marginBottom: 20 }}>✅</div>
+            <h2 style={{ margin: '0 0 20px 0', fontSize: 32, fontWeight: 800 }}>
+              Déverrouillage T1
+            </h2>
+            <p style={{ fontSize: 20, lineHeight: 1.6, opacity: 0.95 }}>
+              Tous les bureaux du Tour 1 ({unlockCount}) peuvent à nouveau modifier leurs résultats.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal succès déverrouillage Tour 2 - BLEU */}
+      {showUnlockT2Success && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: 20
+          }}
+          onClick={() => setShowUnlockT2Success(false)}
+        >
+          <div style={{
+            background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)',
+            color: '#fff',
+            borderRadius: 16,
+            width: '90%',
+            maxWidth: 550,
+            padding: 50,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 80, marginBottom: 20 }}>✅</div>
+            <h2 style={{ margin: '0 0 20px 0', fontSize: 32, fontWeight: 800 }}>
+              Déverrouillage T2
+            </h2>
+            <p style={{ fontSize: 20, lineHeight: 1.6, opacity: 0.95 }}>
+              Tous les bureaux du Tour 2 ({unlockCount}) peuvent à nouveau modifier leurs résultats.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal succès retour Tour 1 - VERT */}
+      {showTour1ActiveSuccess && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: 20
+          }}
+          onClick={() => setShowTour1ActiveSuccess(false)}
+        >
+          <div style={{
+            background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)',
+            color: '#fff',
+            borderRadius: 16,
+            width: '90%',
+            maxWidth: 550,
+            padding: 50,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 80, marginBottom: 20 }}>✅</div>
+            <h2 style={{ margin: '0 0 20px 0', fontSize: 32, fontWeight: 800 }}>
+              Tour 1 actif
+            </h2>
+            <p style={{ fontSize: 20, lineHeight: 1.6, opacity: 0.95 }}>
+              Retour au premier tour effectué.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal succès passage Tour 2 - BLEU */}
+      {showTour2ActiveSuccess && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: 20
+          }}
+          onClick={() => setShowTour2ActiveSuccess(false)}
+        >
+          <div style={{
+            background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)',
+            color: '#fff',
+            borderRadius: 16,
+            width: '90%',
+            maxWidth: 550,
+            padding: 50,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 80, marginBottom: 20 }}>✅</div>
+            <h2 style={{ margin: '0 0 20px 0', fontSize: 32, fontWeight: 800 }}>
+              Tour 2 actif
+            </h2>
+            <p style={{ fontSize: 20, lineHeight: 1.6, opacity: 0.95 }}>
+              Passage au second tour effectué.
+            </p>
           </div>
         </div>
       )}

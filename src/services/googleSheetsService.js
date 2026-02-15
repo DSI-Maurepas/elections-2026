@@ -686,6 +686,76 @@ this._setCached(key, filtered);
     });
   }
 
+  async setConfig(keyOrObject, value) {
+    // Support:
+    // - setConfig('VALIDATION_ADMIN_T1', 'TRUE')
+    // - setConfig({ VALIDATION_ADMIN_T1: 'TRUE', VALIDATION_ADMIN_T2: 'FALSE' })
+    const isObj =
+      keyOrObject && typeof keyOrObject === 'object' && !Array.isArray(keyOrObject);
+
+    const patch = isObj ? keyOrObject : { [keyOrObject]: value };
+
+    const normKey = (k) => String(k ?? '').trim();
+    const a1 = this.a1(SHEET_NAMES.CONFIG, 'A:B');
+
+    // Lire l'onglet Config pour localiser les lignes existantes
+    const values = await this.getValues(a1);
+    const startIndex =
+      values.length > 0 && String(values[0][0]).toLowerCase().includes('key') ? 1 : 0;
+
+    // Map: key -> absoluteRowNumber (1-based in sheet)
+    const keyToAbsRow = new Map();
+    for (let i = startIndex; i < values.length; i++) {
+      const k = normKey(values[i]?.[0]);
+      if (k) keyToAbsRow.set(k, i + 1); // +1 because values[] is 0-based but sheet rows are 1-based
+    }
+
+    const batchData = [];
+    const toAppend = [];
+
+    for (const [k0, v] of Object.entries(patch)) {
+      const k = normKey(k0);
+      if (!k) continue;
+
+      const absRow = keyToAbsRow.get(k);
+
+      if (!absRow) {
+        // Ajout d'une nouvelle clé
+        toAppend.push([k, v]);
+      } else {
+        // Mise à jour de la valeur existante
+        const updateA1 = this.a1(SHEET_NAMES.CONFIG, `B${absRow}`);
+        batchData.push({ range: updateA1, values: [[v]] });
+      }
+    }
+
+    // Invalidation caches AVANT les appels réseau
+    try {
+      for (const k of Array.from(this._cache.keys())) {
+        if (String(k).startsWith('getConfig:')) this._cache.delete(k);
+      }
+      for (const k of Array.from(this._inflight.keys())) {
+        if (String(k).startsWith('getConfig:')) this._inflight.delete(k);
+      }
+    } catch (e) {
+      console.warn('Cache invalidation failed (getConfig):', e);
+    }
+    // Invalidation globale (best effort)
+    this._cache.clear();
+
+    // Exécuter les mises à jour
+    if (batchData.length > 0) {
+      await this.batchUpdate(batchData);
+    }
+
+    // Ajouter les nouvelles lignes
+    if (toAppend.length > 0) {
+      await this.appendRows(SHEET_NAMES.CONFIG, toAppend);
+    }
+
+    return true;
+  }
+
   // ==================== STATE ====================
 
   async getElectionState() {

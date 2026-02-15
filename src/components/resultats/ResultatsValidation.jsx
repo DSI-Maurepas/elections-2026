@@ -13,8 +13,15 @@ const ResultatsValidation = ({ electionState}) => {
   }, [loadBureaux, loadResultats]);
 
   const validation = useMemo(() => {
+    // Filtrer uniquement les bureaux actifs (actif !== false et actif !== 'FALSE' et actif !== 0)
+    const bureauxActifs = bureaux.filter((b) => {
+      const actif = b.actif;
+      // Un bureau est actif si actif n'est PAS explicitement FALSE
+      return actif !== false && actif !== 'FALSE' && actif !== 'false' && actif !== 0 && actif !== '0';
+    });
+    
     const declaredSet = new Set(resultats.map((r) => r.bureauId));
-    return bureaux.map((bureau) => {
+    return bureauxActifs.map((bureau) => {
       const declared = declaredSet.has(bureau.id);
       const bureauResultat = resultats.find((r) => r.bureauId === bureau.id);
 
@@ -67,7 +74,13 @@ const ResultatsValidation = ({ electionState}) => {
     return { declaredCount, errorCount, warningCount };
   }, [validation]);
 
-  const allValid = stats.declaredCount === bureaux.length && stats.errorCount === 0;
+  // N'afficher le compteur que si les données sont complètes (évite les affichages intermédiaires)
+  const totalBureaux = validation.length > 0 ? validation.length : bureaux.filter((b) => {
+    const actif = b.actif;
+    return actif !== false && actif !== 'FALSE' && actif !== 'false' && actif !== 0 && actif !== '0';
+  }).length;
+
+  const allValid = stats.declaredCount === totalBureaux && stats.errorCount === 0;
 
   // Classe de bandeau (visuel uniquement):
   // - is-valid : tout est OK
@@ -76,8 +89,25 @@ const ResultatsValidation = ({ electionState}) => {
   const bannerStateClass = allValid ? 'is-valid' : stats.errorCount > 0 ? 'is-error' : 'is-warning';
   const bannerIcon = allValid ? '🟢' : stats.errorCount > 0 ? '🔴' : '🟠';
 
+  // Ne pas afficher le composant tant que les données ne sont pas chargées
+  if (bureaux.length === 0 || totalBureaux === 0) {
+    return null;
+  }
+
   return (
-    <div className="resultats-validation modern-card">
+    <div 
+      className="resultats-validation modern-card"
+      style={{
+        background: '#fff',
+        borderRadius: 12,
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+        border: '2px solid #e5e7eb',
+        borderTop: `4px solid ${allValid ? '#10b981' : stats.errorCount > 0 ? '#ef4444' : '#f59e0b'}`,
+        padding: 0,
+        marginBottom: 24,
+        overflow: 'hidden'
+      }}
+    >
 
             <style>{`
         /* ===== ResultatsValidation — responsive lisible (scopé) ===== */
@@ -218,89 +248,68 @@ const ResultatsValidation = ({ electionState}) => {
         }
       `}</style>
 
-      <h4 className="validation-title">
-        ✅ Validation des résultats - Tour {electionState.tourActuel}
-      </h4>
-
-      {/* Bandeau global */}
-      <div className={`validation-banner ${bannerStateClass}`}>
-        <div className="banner-icon">{bannerIcon}</div>
-        <div className="banner-content">
-          <div className="banner-title">
-            {allValid ? 'Tous les résultats sont validés 🟢' : stats.errorCount > 0 ? 'Erreurs à corriger   ⮕' : 'Validation requise 🟠'}
-          <span className="validation-info-buttons" style={{ display: 'inline-flex', alignItems: 'center', gap: '12px', marginLeft: '12px' }}>
-            <button
-              type="button"
-              title="Nombre de bureaux déclarés"
-              className="info-btn info-btn-bureaux"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 14px',
-                minHeight: '36px',
-                borderRadius: '999px',
-                border: '2px solid #2b7cff',
-                background: 'linear-gradient(135deg, #a2cbf9 30%, #2b7cff 90%)',
-                color: '#ffffff',
-                fontWeight: 800,
-                fontSize: '14px',
-                lineHeight: 1,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              🏛️ Bureaux : {stats.declaredCount} / {bureaux.length}
-            </button>
-
-            <button
-              type="button"
-              title="Nombre d'erreurs bloquantes"
-              className="info-btn info-btn-erreurs"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 14px',
-                minHeight: '36px',
-                borderRadius: '999px',
-                border: '2px solid #ff3b3b',
-                background: 'linear-gradient(135deg, #fac3c3 20%, #ff7a7a 70%)',
-                color: '#ffffff',
-                fontWeight: 800,
-                fontSize: '14px',
-                lineHeight: 1,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              ❌ Erreurs : {stats.errorCount}
-            </button>
-
-            <button
-              type="button"
-              title="Nombre d'avertissements non bloquants"
-              className="info-btn info-btn-avertissements"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 14px',
-                minHeight: '36px',
-                borderRadius: '999px',
-                border: '2px solid #ff8a00',
-                background: 'linear-gradient(135deg, #f9d58b 30%, #f9bd43 60%)',
-                color: '#ffffff',
-                fontWeight: 800,
-                fontSize: '14px',
-                lineHeight: 1,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              ⚠️ Avertissements : {stats.warningCount}
-            </button>
+      {/* Header compact moderne */}
+      <div style={{ 
+        padding: '16px 20px',
+        borderBottom: '2px solid #f3f4f6',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 16
+      }}>
+        {/* Titre + Icône statut */}
+        <div style={{ 
+          fontSize: 18, 
+          fontWeight: 800, 
+          color: '#1e293b',
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 10
+        }}>
+          <span style={{ fontSize: 20 }}>
+            {allValid ? '🟢' : stats.errorCount > 0 ? '🔴' : '🟠'}
           </span>
+          <span>Validation des résultats — Tour {electionState.tourActuel}</span>
+        </div>
+
+        {/* Stats inline compactes */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 20,
+          fontSize: 14,
+          color: '#64748b',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>🏛️</span>
+            <span style={{ fontWeight: 700, color: '#1e293b' }}>
+              {stats.declaredCount}/{totalBureaux}
+            </span>
+            <span>bureaux</span>
+          </div>
+          <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>❌</span>
+            <span style={{ fontWeight: 700, color: stats.errorCount > 0 ? '#ef4444' : '#1e293b' }}>
+              {stats.errorCount}
+            </span>
+            <span>erreurs</span>
+          </div>
+          <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>⚠️</span>
+            <span style={{ fontWeight: 700, color: stats.warningCount > 0 ? '#f59e0b' : '#1e293b' }}>
+              {stats.warningCount}
+            </span>
+            <span>avertissements</span>
           </div>
         </div>
       </div>
+
+      {/* Corps du bloc - Tableau */}
+      <div style={{ padding: 20 }}>
 
       {/* Tableau — uniquement les bureaux en erreur ou avertissement */}
       {(stats.errorCount > 0 || stats.warningCount > 0) && (
@@ -336,6 +345,7 @@ const ResultatsValidation = ({ electionState}) => {
         </table>
       </div>
       )}
+      </div>
     </div>
   );
 };

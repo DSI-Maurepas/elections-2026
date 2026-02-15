@@ -6,6 +6,9 @@ import { useElectionState } from '../../hooks/useElectionState';
 const SiegesCommunautaire = ({ electionState }) => {
   const { state } = useElectionState();
 
+  // Configuration : nombre de sièges CC
+  const { data: config } = useGoogleSheets('Config');
+
   // Source prioritaire : tableau Google Sheets (voix municipales consolidées par liste)
   const { data: seatsCommunity } = useGoogleSheets('Seats_Community');
 
@@ -14,8 +17,28 @@ const SiegesCommunautaire = ({ electionState }) => {
   const { data: resultats } = useGoogleSheets(state.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2');
 
   const [sieges, setSieges] = useState([]);
-  // Maurepas / SQY : total à ajuster si nécessaire. Ici 6 (attendu 5/1 sur ton cas).
-  const [totalSieges, setTotalSieges] = useState(6);
+  const [totalSieges, setTotalSieges] = useState(6); // Valeur par défaut
+
+  // Lecture du nombre de sièges CC depuis Config
+  useEffect(() => {
+    if (!config || config.length === 0) return;
+    
+    // Les données sont retournées sous forme de tableau : row[0] = Clé, row[1] = Valeur, row[2] = Description
+    const seatsCCRow = config.find(row => {
+      const cle = row[0] || row['0'] || '';
+      return cle === 'SEATS_COMMUNITY_TOTAL';
+    });
+    
+    if (seatsCCRow) {
+      const rawValue = seatsCCRow[1] || seatsCCRow['1'] || 6;
+      const cleanedValue = String(rawValue).trim();
+      const value = Number(cleanedValue);
+      
+      if (value > 0) {
+        setTotalSieges(value);
+      }
+    }
+  }, [config]);
 
   const seatsCommunityRows = useMemo(() => {
     return (seatsCommunity || [])
@@ -47,32 +70,70 @@ const SiegesCommunautaire = ({ electionState }) => {
       return;
     }
 
-    // 2) Sinon, fallback historique
+    // 2) Calcul de repli : consolider les voix depuis Resultats_T2 + Candidats
     if (!resultats?.length || !candidats?.length) {
       setSieges([]);
       return;
     }
 
-    const results = calculService.calculerSiegesCommunautaires(
-      resultats,
-      candidats,
-      totalSieges,
-      { tour: state.tourActuel }
-    );
-    const normalized = (Array.isArray(results) ? results : []).map(r => {
-      const prime = Number(r?.siegesPrime ?? 0) || 0;
-      const prop = Number(r?.siegesProportionnels ?? 0) || 0;
-      const methode = prime > 0
-        ? `Prime (${prime}) + Proportionnelle (${prop})`
-        : `Proportionnelle (${prop})`;
-      return { ...r, methode };
+    // Filtrer les candidats actifs au tour actuel
+    const candidatsActifs = candidats.filter(c => state.tourActuel === 1 ? c.actifT1 : c.actifT2);
+    
+    if (candidatsActifs.length === 0) {
+      setSieges([]);
+      return;
+    }
+
+    // Consolider les voix par candidat (somme de tous les bureaux)
+    const listesConsolidees = candidatsActifs.map(candidat => {
+      const listeId = candidat.listeId || candidat.ListeID || '';
+      const nomListe = candidat.nomListe || candidat.NomListe || listeId;
+      
+      // Somme des voix pour cette liste sur tous les bureaux
+      // Les voix sont dans bureau.voix qui est un objet {L1: 770, L2: 249, L3: 200, ...}
+      const totalVoix = resultats.reduce((sum, bureau) => {
+        const voixObj = bureau.voix || {};
+        const voix = Number(voixObj[listeId]) || 0;
+        return sum + voix;
+      }, 0);
+      
+      return {
+        listeId,
+        nomListe,
+        voixMunicipal: totalVoix,
+        eligible: true
+      };
     });
+
+    // Calculer la répartition avec la fonction qui fonctionne
+    const normalized = calculService
+      .calculerSiegesCommunautairesDepuisListes(listesConsolidees, totalSieges)
+      .map(r => {
+        const prime = Number(r?.siegesPrime ?? 0) || 0;
+        const prop = Number(r?.siegesProportionnels ?? 0) || 0;
+        const methode = prime > 0
+          ? `Prime (${prime}) + Proportionnelle (${prop})`
+          : `Proportionnelle (${prop})`;
+        return { ...r, methode };
+      });
+    
     setSieges(normalized);
   }, [seatsCommunityRows, resultats, candidats, totalSieges, state.tourActuel]);
 
   return (
-    <div className="sieges-communautaire">
-      <h3>🪑 Répartition des sièges - Conseil Communautaire (SQY)</h3>
+    <div 
+      className="sieges-communautaire"
+      style={{
+        background: '#fff',
+        borderRadius: 12,
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+        border: '2px solid #e5e7eb',
+        borderTop: '4px solid #3b82f6',
+        padding: 0,
+        marginBottom: 24,
+        overflow: 'hidden'
+      }}
+    >
 
       <style>{`
 /* Sticky + scroll uniquement pour les tableaux Sièges */
@@ -156,9 +217,46 @@ const SiegesCommunautaire = ({ electionState }) => {
 
       `}</style>
 
-      <div className="total-sieges">
-        Total sièges à attribuer : <strong> {totalSieges} </strong>
+      {/* Header compact moderne */}
+      <div style={{ 
+        padding: '16px 20px',
+        borderBottom: '2px solid #f3f4f6',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 16
+      }}>
+        {/* Titre */}
+        <div style={{ 
+          fontSize: 18, 
+          fontWeight: 800, 
+          color: '#1e293b',
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 10
+        }}>
+          <span style={{ fontSize: 20 }}>🪑</span>
+          <span>Répartition des sièges — Conseil Communautaire (SQY)</span>
+        </div>
+
+        {/* Total sièges inline */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 6,
+          fontSize: 14,
+          color: '#64748b'
+        }}>
+          <span>Total sièges à attribuer :</span>
+          <span style={{ fontWeight: 800, color: '#1e293b', fontSize: 18 }}>
+            {totalSieges}
+          </span>
+        </div>
       </div>
+
+      {/* Corps du bloc - Tableau */}
+      <div style={{ padding: 20 }}>
 
       <div className="sieges-scroll">
         <table className="sieges-table">
@@ -197,10 +295,31 @@ const SiegesCommunautaire = ({ electionState }) => {
         </table>
       </div>
 
-      <div className="explication">
-        <h4>Méthode de calcul :</h4>
-        <p>Prime majoritaire : 50% des sièges (arrondi au supérieur) à la liste en tête</p>
-        <p>Reste : proportionnelle à la plus forte moyenne, seuil 5%</p>
+      {/* Bloc méthode de calcul moderne */}
+      <div style={{
+        background: 'rgba(251, 191, 36, 0.08)',
+        borderLeft: '4px solid #f59e0b',
+        borderRadius: 8,
+        padding: '14px 18px',
+        marginTop: 16
+      }}>
+        <div style={{ 
+          fontSize: 13, 
+          fontWeight: 700, 
+          color: '#92400e', 
+          marginBottom: 8,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6
+        }}>
+          <span>ℹ️</span>
+          <span>Méthode de calcul</span>
+        </div>
+        <div style={{ fontSize: 12, color: '#78350f', lineHeight: 1.6 }}>
+          <div style={{ marginBottom: 4 }}>• Prime majoritaire : 50% des sièges (arrondi au supérieur) à la liste en tête</div>
+          <div>• Reste : proportionnelle à la plus forte moyenne, seuil 5%</div>
+        </div>
+      </div>
       </div>
     </div>
   );

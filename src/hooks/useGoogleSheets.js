@@ -1,9 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import googleSheetsService from '../services/googleSheetsService';
+import authService from '../services/authService';
 
 /**
  * Hook personnalisé pour simplifier les interactions avec Google Sheets
  * Gère le chargement, les erreurs, et les opérations CRUD
+ *
+ * Objectif non-régressable :
+ * - Ne JAMAIS appeler l'API Sheets si le token OAuth est absent/expiré
+ * - Éviter tout "Uncaught (in promise)" lors des auto-load / reload déclenchés par useEffect
+ * - Conserver le comportement d'erreur pour les appels explicites (load/create/update/...)
  */
 export const useGoogleSheets = (sheetName) => {
   const [data, setData] = useState([]);
@@ -14,36 +20,67 @@ export const useGoogleSheets = (sheetName) => {
   const reloadTimerRef = useRef(null);
   const hasLoadedOnceRef = useRef(false);
 
-  // Charger les données
-  const load = useCallback(async (filters = {}) => {
-    lastFiltersRef.current = filters || {};
+  const hasOAuthToken = useCallback(() => {
     try {
-      setLoading(true);
-      setError(null);
-      
-      const result = await googleSheetsService.getData(sheetName, filters);
-      setData(result);
-
-      // Marqueur : utile pour auto-load au montage sans provoquer de boucles.
-      hasLoadedOnceRef.current = true;
-      
-      return result;
-    } catch (err) {
-      console.error(`Erreur chargement ${sheetName}:`, err);
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
+      return !!authService.getAccessToken?.();
+    } catch (_) {
+      return false;
     }
-  }, [sheetName]);
+  }, []);
+
+  /**
+   * Charger les données
+   * @param {object} filters
+   * @param {{silent?: boolean}} options
+   *  - silent=true : ne throw pas (utile pour auto-load / reload) afin d'éviter les promesses non catchées
+   */
+  const load = useCallback(
+    async (filters = {}, options = {}) => {
+      const { silent = false } = options || {};
+      lastFiltersRef.current = filters || {};
+
+      // Garde-fou : pas d'appel réseau sans token OAuth.
+      if (!hasOAuthToken()) {
+        const err = new Error('Non authentifié - Token manquant');
+        setError(err.message);
+        // On ne force pas setData([]) pour ne pas "vider" l'UI si l'utilisateur perd le token en cours de session.
+        if (!silent) throw err;
+        return [];
+      }
+
+      try {
+        setLoading(true);
+        setError(null);
+
+        const result = await googleSheetsService.getData(sheetName, filters);
+        setData(result);
+
+        // Marqueur : utile pour auto-load au montage sans provoquer de boucles.
+        hasLoadedOnceRef.current = true;
+
+        return result;
+      } catch (err) {
+        console.error(`Erreur chargement ${sheetName}:`, err);
+        setError(err?.message || String(err));
+        if (!silent) throw err;
+        return [];
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sheetName, hasOAuthToken]
+  );
 
   // Auto-chargement au montage (et lors d'un changement de sheetName)
   // IMPORTANT : certaines vues consomment uniquement `data` sans appeler `load()`.
-  // La déduplication/caching du service évite les sur-appels en cas de load concurrent.
+  // - En dev React 18, les effects peuvent être invoqués deux fois (StrictMode).
+  // - On utilise silent=true + garde token pour éviter la console spam et les Uncaught promise.
   useEffect(() => {
     if (!sheetName) return;
     if (hasLoadedOnceRef.current) return;
-    load(lastFiltersRef.current);
+
+    // Auto-load non bloquant : ne jamais throw ici
+    load(lastFiltersRef.current, { silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheetName, load]);
 
@@ -51,7 +88,7 @@ export const useGoogleSheets = (sheetName) => {
   const scheduleReload = useCallback(() => {
     if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
     reloadTimerRef.current = setTimeout(() => {
-      load(lastFiltersRef.current);
+      load(lastFiltersRef.current, { silent: true });
     }, 250);
   }, [load]);
 
@@ -70,92 +107,103 @@ export const useGoogleSheets = (sheetName) => {
     };
   }, [sheetName, scheduleReload]);
 
-
   // Créer une nouvelle ligne
-  const create = useCallback(async (rowData) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const result = await googleSheetsService.appendRow(sheetName, rowData);
-      
-      // Recharger les données
-      await load();
-      
-      return result;
-    } catch (err) {
-      console.error(`Erreur création ${sheetName}:`, err);
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [sheetName, load]);
+  const create = useCallback(
+    async (rowData) => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const result = await googleSheetsService.appendRow(sheetName, rowData);
+
+        // Recharger les données (appel explicite => throw si token manquant)
+        await load();
+
+        return result;
+      } catch (err) {
+        console.error(`Erreur création ${sheetName}:`, err);
+        setError(err?.message || String(err));
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sheetName, load]
+  );
 
   // Mettre à jour une ligne
-  const update = useCallback(async (rowIndex, rowData) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const result = await googleSheetsService.updateRow(sheetName, rowIndex, rowData);
-      
-      // Recharger les données
-      await load();
-      
-      return result;
-    } catch (err) {
-      console.error(`Erreur mise à jour ${sheetName}:`, err);
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [sheetName, load]);
+  const update = useCallback(
+    async (rowIndex, rowData) => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const result = await googleSheetsService.updateRow(sheetName, rowIndex, rowData);
+
+        // Recharger les données (appel explicite => throw si token manquant)
+        await load();
+
+        return result;
+      } catch (err) {
+        console.error(`Erreur mise à jour ${sheetName}:`, err);
+        setError(err?.message || String(err));
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sheetName, load]
+  );
 
   // Supprimer une ligne
-  const remove = useCallback(async (rowIndex) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      await googleSheetsService.deleteRow(sheetName, rowIndex);
-      
-      // Recharger les données
-      await load();
-    } catch (err) {
-      console.error(`Erreur suppression ${sheetName}:`, err);
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [sheetName, load]);
+  const remove = useCallback(
+    async (rowIndex) => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        await googleSheetsService.deleteRow(sheetName, rowIndex);
+
+        // Recharger les données (appel explicite => throw si token manquant)
+        await load();
+      } catch (err) {
+        console.error(`Erreur suppression ${sheetName}:`, err);
+        setError(err?.message || String(err));
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sheetName, load]
+  );
 
   // Créer ou mettre à jour en masse
-  const batchUpdate = useCallback(async (rows) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const result = await googleSheetsService.batchUpdate(sheetName, rows);
-      
-      // Recharger les données
-      await load();
-      
-      return result;
-    } catch (err) {
-      console.error(`Erreur batch update ${sheetName}:`, err);
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [sheetName, load]);
+  const batchUpdate = useCallback(
+    async (rows) => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const result = await googleSheetsService.batchUpdate(sheetName, rows);
+
+        // Recharger les données (appel explicite => throw si token manquant)
+        await load();
+
+        return result;
+      } catch (err) {
+        console.error(`Erreur batch update ${sheetName}:`, err);
+        setError(err?.message || String(err));
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sheetName, load]
+  );
 
   // Rafraîchir les données
   const refresh = useCallback(async () => {
-    return load();
+    return load({}, { silent: false });
   }, [load]);
 
   // Réinitialiser l'erreur
@@ -173,7 +221,7 @@ export const useGoogleSheets = (sheetName) => {
     remove,
     batchUpdate,
     refresh,
-    clearError
+    clearError,
   };
 };
 

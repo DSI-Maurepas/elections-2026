@@ -26,8 +26,10 @@ const PassageSecondTour = ({
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [adminError, setAdminError] = useState('');
   const [showConfirmT2Modal, setShowConfirmT2Modal] = useState(false);
+  const [showSuccessT2Modal, setShowSuccessT2Modal] = useState(false);
   const [showConfirmBackModal, setShowConfirmBackModal] = useState(false);
   const [pendingQualified, setPendingQualified] = useState([]);
+  const [successQualified, setSuccessQualified] = useState([]);
 
   // Flag piloté par l'Administration (ElectionsState: secondTourEnabled)
   // Tolérant aux types (booléen, number, string)
@@ -131,18 +133,35 @@ const PassageSecondTour = ({
     candidatsAvecVoix.sort((a, b) => (b.voix || 0) - (a.voix || 0));
     setClassement(candidatsAvecVoix);
 
+    // Règle française : sont qualifiés au 2nd tour toutes les listes ayant >= 10% des suffrages exprimés
+    const SEUIL_QUALIFICATION = 10; // 10%
+    
+    // Filtrer les listes qui atteignent le seuil de 10%
+    const listesAuDessusDuSeuil = candidatsAvecVoix.filter(c => (c.pourcentage || 0) >= SEUIL_QUALIFICATION);
+    
     if (candidatsAvecVoix.length >= 2) {
       const premier = candidatsAvecVoix[0];
       const second = candidatsAvecVoix[1];
 
+      // Cas 1 : Égalité parfaite entre 1er et 2ème
       if ((premier?.voix || 0) === (second?.voix || 0)) {
         setEgalite(true);
         setCandidatsQualifies([]);
-      } else {
+      } 
+      // Cas 2 : Au moins 2 listes atteignent 10% → toutes sont qualifiées
+      else if (listesAuDessusDuSeuil.length >= 2) {
+        setEgalite(false);
+        setCandidatsQualifies(listesAuDessusDuSeuil);
+        setMessage((prev) => (prev?.type === 'warning' ? null : prev));
+      }
+      // Cas 3 : Moins de 2 listes atteignent 10% → les 2 premières sont qualifiées (règle de repli)
+      else {
         setEgalite(false);
         setCandidatsQualifies([premier, second]);
-        // Ne pas forcer un message WARNING ici (évite les doublons d'affichage).
-        setMessage((prev) => (prev?.type === 'warning' ? null : prev));
+        setMessage({
+          type: 'warning',
+          text: `⚠️ Aucune ou une seule liste n'atteint 10%. Les 2 premières sont qualifiées par défaut.`
+        });
       }
     }
   }, [resultats, candidats]);
@@ -156,10 +175,10 @@ const PassageSecondTour = ({
       return;
     }
 
-    if (candidatsQualifies.length !== 2) {
+    if (candidatsQualifies.length < 2) {
       setMessage({
         type: 'error',
-        text: 'Vous devez sélectionner exactement 2 candidats',
+        text: 'Il faut au minimum 2 candidats qualifiés pour passer au 2nd tour',
       });
       return;
     }
@@ -171,8 +190,8 @@ const PassageSecondTour = ({
 
   const confirmPassageT2 = async () => {
     const candidats = Array.isArray(pendingQualified) ? pendingQualified : [];
-    if (candidats.length !== 2) {
-      setMessage({ type: 'error', text: 'Impossible de confirmer : 2 candidats requis.' });
+    if (candidats.length < 2) {
+      setMessage({ type: 'error', text: 'Impossible de confirmer : minimum 2 candidats requis.' });
       setShowConfirmT2Modal(false);
       return;
     }
@@ -190,10 +209,10 @@ const PassageSecondTour = ({
         console.warn('Audit log failed (PASSAGE_SECOND_TOUR):', e);
       }
 
-      setMessage({
-        type: 'success',
-        text: '✅ Passage au 2nd tour effectué avec succès',
-      });
+      // Sauvegarder les candidats pour la modale de succès AVANT de vider pendingQualified
+      setSuccessQualified(candidats);
+      // Afficher la modale de succès bleue (style 2nd tour)
+      setShowSuccessT2Modal(true);
     } catch (error) {
       setMessage({
         type: 'error',
@@ -505,6 +524,13 @@ const PassageSecondTour = ({
           font-size: 18px;
           font-weight: 900;
         }
+        
+        @keyframes bounce {
+          0%, 100% { transform: translateY(0); }
+          25% { transform: translateY(-20px); }
+          50% { transform: translateY(-10px); }
+          75% { transform: translateY(-15px); }
+        }
       `}</style>
 
 
@@ -521,16 +547,19 @@ const PassageSecondTour = ({
           <div>
             <div style={{ fontWeight: 900, fontSize: 16 }}>📊 Classement 1er tour</div>
             <div style={{ opacity: 0.85, fontSize: 13, marginTop: 4 }}>
-              Les <strong>2 premiers</strong> sont qualifiés (sauf égalité).
+              {candidatsQualifies.length === 2 
+                ? "Les 2 premiers sont qualifiés (sauf égalité)."
+                : `Toutes les listes avec ≥ 10% sont qualifiées (${candidatsQualifies.length} liste${candidatsQualifies.length > 1 ? 's' : ''}).`
+              }
             </div>
           </div>
-          {candidatsQualifies.length === 2 && !egalite && (
-            <span style={styles.badge}>✅ 2 qualifiés détectés</span>
+          {candidatsQualifies.length >= 2 && !egalite && (
+            <span style={styles.badge}>✅ {candidatsQualifies.length} qualifié{candidatsQualifies.length > 1 ? 's' : ''} détecté{candidatsQualifies.length > 1 ? 's' : ''}</span>
           )}
         </div>
       </div>
 
-      {/* Tableau arrondi + 2 qualifiés en vert */}
+      {/* Tableau arrondi + candidats qualifiés (≥ 10%) en vert */}
       <div style={{ ...styles.card, padding: 14, marginBottom: 16 }}>
         <div style={styles.tableWrap}>
           <table style={styles.table}>
@@ -545,7 +574,8 @@ const PassageSecondTour = ({
             </thead>
             <tbody>
               {classement.map((c, index) => {
-                const isQualified = index < 2;
+                // Un candidat est qualifié s'il a >= 10% des suffrages exprimés
+                const isQualified = (c.pourcentage || 0) >= 10;
                 const pctBar = maxVoix > 0 ? ((c?.voix || 0) / maxVoix) * 100 : 0;
 
                 return (
@@ -582,41 +612,37 @@ const PassageSecondTour = ({
       {message && <div className={`message ${message.type}`}>{message.text}</div>}
 
       {/* Bloc "Candidats qualifiés" */}
-      {!egalite && candidatsQualifies.length === 2 && (
+      {!egalite && candidatsQualifies.length >= 2 && (
         <div style={{ ...styles.card, marginBottom: 16 }}>
           <h3 style={styles.cardTitle}>🏁 Candidats qualifiés pour le 2nd tour</h3>
-          <div style={{ opacity: 0.85, fontSize: 13 }}>
-            Vérifie les noms et les voix avant confirmation.
+          <div style={{ opacity: 0.85, fontSize: 13, marginBottom: 12 }}>
+            {candidatsQualifies.length === 2 
+              ? "2 listes qualifiées - Vérifie les noms et les voix avant confirmation."
+              : `${candidatsQualifies.length} listes qualifiées (≥ 10% des suffrages exprimés) - Vérifie avant confirmation.`
+            }
           </div>
 
           <div style={styles.qualifiesGrid}>
-            <div style={styles.miniCard('rgba(34,197,94,0.65)')}>
-              <div style={styles.miniTop}>
-                <div style={styles.miniRank}>1er</div>
-                <div style={{ ...styles.miniNumber }}>{(candidatsQualifies[0].voix || 0).toLocaleString('fr-FR')} voix</div>
-              </div>
-              <div style={styles.miniName}>{candidatsQualifies[0].nom}</div>
-              <div style={{ marginTop: 8, opacity: 0.85, fontSize: 13 }}>
-                {(candidatsQualifies[0].pourcentage || 0).toFixed(2)}%
-              </div>
-              <div style={{ marginTop: 10, ...styles.barWrap }}>
-                <div style={styles.bar(maxVoix > 0 ? ((candidatsQualifies[0].voix || 0) / maxVoix) * 100 : 0)} />
-              </div>
-            </div>
-
-            <div style={styles.miniCard('rgba(34,197,94,0.55)')}>
-              <div style={styles.miniTop}>
-                <div style={styles.miniRank}>2ème</div>
-                <div style={{ ...styles.miniNumber }}>{(candidatsQualifies[1].voix || 0).toLocaleString('fr-FR')} voix</div>
-              </div>
-              <div style={styles.miniName}>{candidatsQualifies[1].nom}</div>
-              <div style={{ marginTop: 8, opacity: 0.85, fontSize: 13 }}>
-                {(candidatsQualifies[1].pourcentage || 0).toFixed(2)}%
-              </div>
-              <div style={{ marginTop: 10, ...styles.barWrap }}>
-                <div style={styles.bar(maxVoix > 0 ? ((candidatsQualifies[1].voix || 0) / maxVoix) * 100 : 0)} />
-              </div>
-            </div>
+            {candidatsQualifies.map((candidat, index) => {
+              const rang = index === 0 ? '1er' : index === 1 ? '2ème' : `${index + 1}ème`;
+              const couleurIntensity = Math.max(0.35, 0.65 - (index * 0.1)); // Dégrade la couleur
+              
+              return (
+                <div key={candidat.id || index} style={styles.miniCard(`rgba(34,197,94,${couleurIntensity})`)}>
+                  <div style={styles.miniTop}>
+                    <div style={styles.miniRank}>{rang}</div>
+                    <div style={{ ...styles.miniNumber }}>{(candidat.voix || 0).toLocaleString('fr-FR')} voix</div>
+                  </div>
+                  <div style={styles.miniName}>{candidat.nom}</div>
+                  <div style={{ marginTop: 8, opacity: 0.85, fontSize: 13 }}>
+                    {(candidat.pourcentage || 0).toFixed(2)}%
+                  </div>
+                  <div style={{ marginTop: 10, ...styles.barWrap }}>
+                    <div style={styles.bar(maxVoix > 0 ? ((candidat.voix || 0) / maxVoix) * 100 : 0)} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -795,6 +821,116 @@ const PassageSecondTour = ({
                 }}
               >
                 Confirmer retour T1
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale de succès - Passage au 2nd tour confirmé */}
+      {showSuccessT2Modal && (
+        <div 
+          style={styles.modalOverlay} 
+          role="dialog" 
+          aria-modal="true"
+          onClick={() => {
+            setShowSuccessT2Modal(false);
+            setSuccessQualified([]);
+          }}
+        >
+          <div 
+            style={{
+              ...styles.modalCard,
+              background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.95) 0%, rgba(59, 130, 246, 0.92) 100%)',
+              border: '2px solid rgba(255,255,255,0.3)',
+              boxShadow: '0 25px 50px rgba(37, 99, 235, 0.4)',
+              maxWidth: 500,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ textAlign: 'center', padding: '32px 24px' }}>
+              <div style={{
+                fontSize: 72,
+                marginBottom: 20,
+                animation: 'bounce 0.6s ease-in-out',
+              }}>
+                🗳️
+              </div>
+              <h3 style={{
+                margin: 0,
+                marginBottom: 16,
+                fontSize: 28,
+                fontWeight: 900,
+                color: '#fff',
+                textShadow: '0 2px 4px rgba(0,0,0,0.2)',
+              }}>
+                Passage au 2nd tour confirmé !
+              </h3>
+              <div style={{
+                fontSize: 16,
+                color: 'rgba(255,255,255,0.95)',
+                lineHeight: 1.6,
+                marginBottom: 8,
+              }}>
+                {successQualified.length === 2 
+                  ? "Les deux listes qualifiées sont :"
+                  : `Les ${successQualified.length} listes qualifiées sont :`
+                }
+              </div>
+              <div style={{
+                background: 'rgba(255,255,255,0.2)',
+                borderRadius: 12,
+                padding: '16px',
+                margin: '16px 0',
+                backdropFilter: 'blur(10px)',
+              }}>
+                {successQualified.map((candidat, index) => (
+                  <div key={candidat?.id || index} style={{
+                    fontSize: 18,
+                    fontWeight: 900,
+                    color: '#fff',
+                    marginBottom: index < successQualified.length - 1 ? 8 : 0,
+                  }}>
+                    ✅ {candidat?.nom || '—'}
+                  </div>
+                ))}
+              </div>
+              <div style={{
+                fontSize: 14,
+                color: 'rgba(255,255,255,0.9)',
+                marginTop: 16,
+                marginBottom: 24,
+              }}>
+                L'application est maintenant configurée pour le 2nd tour
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSuccessT2Modal(false);
+                  setSuccessQualified([]);
+                }}
+                style={{
+                  background: 'rgba(255,255,255,0.95)',
+                  color: '#2563eb',
+                  border: 'none',
+                  borderRadius: 12,
+                  padding: '12px 32px',
+                  fontSize: 16,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'scale(1.05)';
+                  e.target.style.boxShadow = '0 6px 16px rgba(0,0,0,0.2)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'scale(1)';
+                  e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                }}
+              >
+                Parfait, continuer
               </button>
             </div>
           </div>

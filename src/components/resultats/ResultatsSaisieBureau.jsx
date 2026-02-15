@@ -19,6 +19,7 @@ const normalizeBureauId = (value) => {
 export default function ResultatsSaisieBureau({ electionState: electionStateProp } = {}) {
   const auth = useMemo(() => getAuthState(), []);
   const forcedBureauId = isBV(auth) ? String(auth.bureauId) : null;
+  const isAdmin = !isBV(auth); // Admin peut toujours modifier
 
   const { state: electionStateHook } = useElectionState();
   const electionState = electionStateProp || electionStateHook;
@@ -31,6 +32,16 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
 
   const [selectedBureauId, setSelectedBureauId] = useState(forcedBureauId || '');
   const [row, setRow] = useState(null);
+  const [isLocked, setIsLocked] = useState(false); // État de verrouillage BV
+  const [showConfirmModal, setShowConfirmModal] = useState(false); // Modal de confirmation BV
+  const [showSuccessModal, setShowSuccessModal] = useState(false); // Modal de succès BV
+  
+  // États pour le verrouillage ADMIN
+  const [adminValidated, setAdminValidated] = useState(false); // État de validation admin globale
+  const [showAdminConfirmModal, setShowAdminConfirmModal] = useState(false); // Modal confirmation admin
+  const [showAdminSuccessModal, setShowAdminSuccessModal] = useState(false); // Modal succès admin
+  const [showAdminUnlockModal, setShowAdminUnlockModal] = useState(false); // Modal déverrouillage admin
+  const [showAdminUnlockSuccessModal, setShowAdminUnlockSuccessModal] = useState(false); // Modal succès après déverrouillage
 
   const [inputsMain, setInputsMain] = useState({
     inscrits: '',
@@ -45,6 +56,20 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
   useEffect(() => {
     if (forcedBureauId) setSelectedBureauId(forcedBureauId);
   }, [forcedBureauId]);
+
+  // Charger le statut de validation admin depuis Config (pour TOUS les profils)
+  useEffect(() => {
+    (async () => {
+      try {
+        const config = await googleSheetsService.getConfig();
+        const key = tourActuel === 1 ? 'VALIDATION_ADMIN_T1' : 'VALIDATION_ADMIN_T2';
+        const validated = config[key] === 'TRUE' || config[key] === true;
+        setAdminValidated(validated);
+      } catch (e) {
+        console.error('Erreur chargement validation admin:', e);
+      }
+    })();
+  }, [tourActuel]);
 
   const bureauOptions = useMemo(() => {
     const list = Array.isArray(bureaux) ? bureaux : [];
@@ -78,11 +103,16 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
       setRow(null);
       setInputsMain({ inscrits: '', votants: '', blancs: '', nuls: '', exprimes: '' });
       setInputsVoix({});
+      setIsLocked(false);
       return;
     }
 
     const current = findRowForBureau(selectedBureauId);
     setRow(current);
+
+    // Charger le statut de verrouillage depuis Google Sheets
+    const locked = current?.validePar ? true : false; // Si validePar existe, c'est verrouillé
+    setIsLocked(locked);
 
     const inscritsFromBureaux = getInscritsForBureau(selectedBureauId);
 
@@ -182,6 +212,15 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
 
   const loading = loadingResultats;
 
+  // Couleurs selon le tour
+  const tourColor = tourActuel === 1 ? {
+    bg: 'linear-gradient(135deg, #065f46 0%, #047857 100%)', // Vert foncé T1
+    text: '#fff'
+  } : {
+    bg: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)', // Bleu T2
+    text: '#fff'
+  };
+
 
   const bureauMeta = useMemo(() => {
     const list = Array.isArray(bureaux) ? bureaux : [];
@@ -232,9 +271,585 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
     return { votants, blancs, nuls, exprimes, sommeVoix, ctrl1Ok, ctrl2Ok };
   }, [candidatsActifs, inputsMain, inputsVoix]);
 
+  // Vérifier si tous les champs sont remplis
+  const allFieldsFilled = useMemo(() => {
+    // Champs principaux (sauf inscrits qui est readonly)
+    const mainFilled = inputsMain.votants && inputsMain.blancs && inputsMain.nuls && inputsMain.exprimes;
+    
+    // Toutes les voix doivent être remplies
+    const voixFilled = candidatsActifs.every(c => {
+      const key = String(c?.listeId ?? '').trim();
+      return inputsVoix[key] && String(inputsVoix[key]).trim() !== '';
+    });
+
+    return mainFilled && voixFilled;
+  }, [inputsMain, inputsVoix, candidatsActifs]);
+
+  // Le bouton est activable si : tous champs remplis + ctrl1 OK + ctrl2 OK + pas encore verrouillé
+  const canLock = allFieldsFilled && controles.ctrl1Ok && controles.ctrl2Ok && !isLocked;
+
+  // Fonction de verrouillage
+  const handleLockBureau = useCallback(async () => {
+    try {
+      // Sauvegarder avec le champ validePar
+      const rowData = buildRowData();
+      rowData.validePar = auth.email || auth.username || 'BV'; // Marquer qui a validé
+      rowData.timestamp = new Date().toISOString();
+
+      if (row) {
+        await googleSheetsService.updateRow(resultatsSheet, row.rowIndex, rowData);
+      } else {
+        await googleSheetsService.appendRow(resultatsSheet, rowData);
+      }
+
+      try {
+        await auditService.log?.('RESULTATS_VERROUILLAGE', {
+          tour: tourActuel,
+          bureauId: selectedBureauId,
+        });
+      } catch (_) {}
+
+      await reloadResultats();
+      
+      setIsLocked(true);
+      setShowConfirmModal(false);
+      setShowSuccessModal(true);
+
+      // Fermer la modal de succès après 3 secondes
+      setTimeout(() => setShowSuccessModal(false), 3000);
+
+    } catch (e) {
+      console.error('Erreur verrouillage:', e);
+      alert('Erreur lors du verrouillage : ' + e.message);
+    }
+  }, [auth, buildRowData, reloadResultats, resultatsSheet, row, selectedBureauId, tourActuel]);
+
+  // Fonction de validation ADMIN globale
+  const handleAdminValidate = useCallback(async () => {
+    try {
+      // 1. Marquer la validation admin dans Config
+      const key = tourActuel === 1 ? 'VALIDATION_ADMIN_T1' : 'VALIDATION_ADMIN_T2';
+      await googleSheetsService.setConfig(key, 'TRUE');
+
+      // 2. Verrouiller TOUS les bureaux qui n'ont pas encore de validePar
+      const resultatsSheet = tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2';
+      const resultatsData = await googleSheetsService.getData(resultatsSheet);
+      
+      if (Array.isArray(resultatsData)) {
+        const updates = [];
+        
+        for (let i = 0; i < resultatsData.length; i++) {
+          const bureau = resultatsData[i];
+          
+          // Si le bureau n'a pas encore été verrouillé par un BV, on le verrouille avec "ADMIN"
+          if (!bureau.validePar) {
+            const rowData = {
+              ...bureau,
+              validePar: 'ADMIN',
+              timestamp: new Date().toISOString()
+            };
+            
+            updates.push({
+              rowIndex: i,
+              rowData: rowData
+            });
+          }
+        }
+        
+        // Appliquer les mises à jour en batch
+        if (updates.length > 0) {
+          await googleSheetsService.batchUpdate(resultatsSheet, updates);
+        }
+      }
+
+      try {
+        await auditService.log?.('ADMIN_VALIDATION_GLOBALE', {
+          tour: tourActuel,
+          action: 'VERROUILLAGE',
+          bureauxVerrouilles: resultatsData?.filter(r => !r.validePar).length || 0
+        });
+      } catch (_) {}
+
+      await reloadResultats();
+
+      setAdminValidated(true);
+      setShowAdminConfirmModal(false);
+      setShowAdminSuccessModal(true);
+
+      setTimeout(() => setShowAdminSuccessModal(false), 3000);
+
+    } catch (e) {
+      console.error('Erreur validation admin:', e);
+      alert('Erreur lors de la validation : ' + e.message);
+    }
+  }, [tourActuel, reloadResultats]);
+
+  // Fonction de déverrouillage ADMIN
+  const handleAdminUnlock = useCallback(async () => {
+    try {
+      // 1. Retirer la validation admin dans Config
+      const key = tourActuel === 1 ? 'VALIDATION_ADMIN_T1' : 'VALIDATION_ADMIN_T2';
+      await googleSheetsService.setConfig(key, 'FALSE');
+
+      // 2. Déverrouiller UNIQUEMENT les bureaux verrouillés par 'ADMIN'
+      const resultatsSheet = tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2';
+      const resultatsData = await googleSheetsService.getData(resultatsSheet);
+      
+      if (Array.isArray(resultatsData)) {
+        const updates = [];
+        
+        for (let i = 0; i < resultatsData.length; i++) {
+          const bureau = resultatsData[i];
+          
+          // Déverrouiller UNIQUEMENT si validePar = 'ADMIN'
+          // Si validePar = email du BV, on ne touche PAS
+          if (bureau.validePar === 'ADMIN') {
+            const rowData = {
+              ...bureau,
+              validePar: '',  // Effacer le verrouillage
+              timestamp: ''   // Effacer le timestamp
+            };
+            
+            updates.push({
+              rowIndex: i,
+              rowData: rowData
+            });
+          }
+        }
+        
+        // Appliquer les mises à jour en batch
+        if (updates.length > 0) {
+          await googleSheetsService.batchUpdate(resultatsSheet, updates);
+        }
+      }
+
+      try {
+        await auditService.log?.('ADMIN_VALIDATION_GLOBALE', {
+          tour: tourActuel,
+          action: 'DEVERROUILLAGE',
+          bureauxDeverrouilles: resultatsData?.filter(r => r.validePar === 'ADMIN').length || 0
+        });
+      } catch (_) {}
+
+      await reloadResultats();
+
+      setAdminValidated(false);
+      setShowAdminUnlockModal(false);
+      setShowAdminUnlockSuccessModal(true);
+
+      setTimeout(() => setShowAdminUnlockSuccessModal(false), 3000);
+
+    } catch (e) {
+      console.error('Erreur déverrouillage admin:', e);
+      alert('Erreur lors du déverrouillage : ' + e.message);
+    }
+  }, [tourActuel, reloadResultats]);
+
+  // Pour l'ADMIN : calculer le statut de verrouillage de tous les bureaux
+  const bureauxStatuses = useMemo(() => {
+    if (!isAdmin) return [];
+    
+    const list = Array.isArray(bureaux) ? bureaux : [];
+    const resultsList = Array.isArray(resultats) ? resultats : [];
+    
+    return list
+      .filter((b) => b && (b.actif === true || b.actif === 'TRUE' || b.actif === 1))
+      .map((bureau) => {
+        const bureauId = String(bureau.id ?? '');
+        const bureauNom = String(bureau.nom ?? bureau.id ?? '');
+        
+        // Trouver la ligne de résultats pour ce bureau
+        const normalized = normalizeBureauId(bureauId);
+        const resultatRow = resultsList.find((r) => normalizeBureauId(r?.bureauId ?? '') === normalized);
+        
+        // Vérifier si verrouillé
+        const isLocked = resultatRow?.validePar ? true : false;
+        
+        return {
+          id: bureauId,
+          nom: bureauNom,
+          isLocked
+        };
+      });
+  }, [isAdmin, bureaux, resultats]);
+
   return (
     <div style={{ marginTop: 20 }}>
+      {/* Modal de confirmation de verrouillage */}
+      {showConfirmModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: 20
+        }}>
+          <div style={{
+            background: tourColor.bg,
+            color: tourColor.text,
+            borderRadius: 16,
+            maxWidth: 500,
+            width: '100%',
+            padding: 32,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+            <h2 style={{ margin: '0 0 16px 0', fontSize: 24, fontWeight: 800 }}>
+              Confirmation de validation
+            </h2>
+            <p style={{ fontSize: 16, lineHeight: 1.6, marginBottom: 24, opacity: 0.95 }}>
+              Vous confirmez que les éléments saisis sont conformes aux résultats de votre bureau de vote ?
+            </p>
+            <p style={{ fontSize: 14, marginBottom: 32, opacity: 0.9, fontStyle: 'italic' }}>
+              ⚠️ Après validation, vous ne pourrez plus modifier les données.
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: 8,
+                  border: '2px solid rgba(255,255,255,0.3)',
+                  background: 'rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  fontSize: 16,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleLockBureau}
+                style={{
+                  padding: '12px 32px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: '#fff',
+                  color: tourActuel === 1 ? '#065f46' : '#1e40af',
+                  fontSize: 16,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                ✅ Valider et verrouiller
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de succès */}
+      {showSuccessModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: 20
+        }}>
+          <div style={{
+            background: tourColor.bg,
+            color: tourColor.text,
+            borderRadius: 16,
+            maxWidth: 450,
+            width: '100%',
+            padding: 40,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center',
+            animation: 'fadeIn 0.3s ease-in'
+          }}>
+            <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
+            <h2 style={{ margin: '0 0 16px 0', fontSize: 28, fontWeight: 800 }}>
+              Saisie validée !
+            </h2>
+            <p style={{ fontSize: 18, lineHeight: 1.6, opacity: 0.95 }}>
+              Les résultats de votre bureau de vote sont maintenant verrouillés.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ========== MODALS ADMIN ========== */}
+      
+      {/* Modal de confirmation ADMIN - Verrouillage global */}
+      {showAdminConfirmModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: 20
+        }}>
+          <div style={{
+            background: tourColor.bg,
+            color: tourColor.text,
+            borderRadius: 16,
+            maxWidth: 550,
+            width: '100%',
+            padding: 32,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🔐</div>
+            <h2 style={{ margin: '0 0 16px 0', fontSize: 24, fontWeight: 800 }}>
+              Validation globale - Administrateur
+            </h2>
+            <p style={{ fontSize: 16, lineHeight: 1.6, marginBottom: 16, opacity: 0.95 }}>
+              Vous confirmez la validation des résultats de <strong>tous les bureaux de vote</strong> pour le Tour {tourActuel} ?
+            </p>
+            <p style={{ 
+              fontSize: 13, 
+              marginBottom: 24, 
+              opacity: 0.9, 
+              background: 'rgba(255,255,255,0.1)',
+              padding: 12,
+              borderRadius: 8
+            }}>
+              ⚠️ <strong>Attention :</strong> Cette action bloque toute modification par les profils BV, même pour les bureaux non encore verrouillés.
+            </p>
+            <p style={{ fontSize: 14, marginBottom: 32, opacity: 0.9, fontStyle: 'italic' }}>
+              ℹ️ Cette validation ajoute un badge visuel sur tous les bureaux.
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button
+                onClick={() => setShowAdminConfirmModal(false)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: 8,
+                  border: '2px solid rgba(255,255,255,0.3)',
+                  background: 'rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  fontSize: 16,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleAdminValidate}
+                style={{
+                  padding: '12px 32px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: '#fff',
+                  color: tourActuel === 1 ? '#065f46' : '#1e40af',
+                  fontSize: 16,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                ✅ Valider tous les bureaux
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de succès ADMIN */}
+      {showAdminSuccessModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: 20
+        }}>
+          <div style={{
+            background: tourColor.bg,
+            color: tourColor.text,
+            borderRadius: 16,
+            maxWidth: 450,
+            width: '100%',
+            padding: 40,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center',
+            animation: 'fadeIn 0.3s ease-in'
+          }}>
+            <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
+            <h2 style={{ margin: '0 0 16px 0', fontSize: 28, fontWeight: 800 }}>
+              Validation administrative effectuée !
+            </h2>
+            <p style={{ fontSize: 18, lineHeight: 1.6, opacity: 0.95 }}>
+              Tous les bureaux de vote sont maintenant validés administrativement.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de déverrouillage ADMIN */}
+      {showAdminUnlockModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: 20
+        }}>
+          <div style={{
+            background: tourColor.bg,
+            color: tourColor.text,
+            borderRadius: 16,
+            maxWidth: 550,
+            width: '100%',
+            padding: 32,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🔓</div>
+            <h2 style={{ margin: '0 0 16px 0', fontSize: 24, fontWeight: 800 }}>
+              Déverrouillage administratif
+            </h2>
+            <p style={{ fontSize: 16, lineHeight: 1.6, marginBottom: 16, opacity: 0.95 }}>
+              Vous souhaitez retirer la validation administrative du Tour {tourActuel} ?
+            </p>
+            <p style={{ fontSize: 14, marginBottom: 24, opacity: 0.9, fontStyle: 'italic' }}>
+              ⚠️ À utiliser uniquement pour une modification exceptionnelle.
+            </p>
+            <p style={{ 
+              fontSize: 13, 
+              marginBottom: 32, 
+              opacity: 0.85, 
+              background: 'rgba(255,255,255,0.1)',
+              padding: 12,
+              borderRadius: 8
+            }}>
+              ℹ️ <strong>Important :</strong> Les bureaux déjà verrouillés par les BV resteront verrouillés. Seuls les bureaux non verrouillés pourront être modifiés.
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button
+                onClick={() => setShowAdminUnlockModal(false)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: 8,
+                  border: '2px solid rgba(255,255,255,0.3)',
+                  background: 'rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  fontSize: 16,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleAdminUnlock}
+                style={{
+                  padding: '12px 32px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: '#fff',
+                  color: tourActuel === 1 ? '#065f46' : '#1e40af',
+                  fontSize: 16,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                🔓 Déverrouiller
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de succès ADMIN - Déverrouillage */}
+      {showAdminUnlockSuccessModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: 20
+        }}>
+          <div style={{
+            background: tourColor.bg,
+            color: tourColor.text,
+            borderRadius: 16,
+            maxWidth: 450,
+            width: '100%',
+            padding: 40,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center',
+            animation: 'fadeIn 0.3s ease-in'
+          }}>
+            <div style={{ fontSize: 64, marginBottom: 16 }}>🔓</div>
+            <h2 style={{ margin: '0 0 16px 0', fontSize: 28, fontWeight: 800 }}>
+              Déverrouillage effectué !
+            </h2>
+            <p style={{ fontSize: 18, lineHeight: 1.6, opacity: 0.95 }}>
+              La main pour verrouiller les résultats a de nouveau été rendue aux bureaux de vote.
+            </p>
+          </div>
+        </div>
+      )}
+
       <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.9); }
+          to { opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes bounce {
+          0%, 100% { 
+            transform: translateX(-50%) translateY(0);
+          }
+          50% { 
+            transform: translateX(-50%) translateY(-8px);
+          }
+        }
+
+        /* Bloc du bouton VERROUILLER en responsive */
+        @media (max-width: 1200px) {
+          .btn-verrouiller-container {
+            flex-basis: 100% !important;
+            margin-top: 10px;
+          }
+        }
+
         /* Responsive pour la grille des champs */
         .resultats-saisie-grid {
           display: grid;
@@ -337,31 +952,307 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
 
       `}</style>
 
-      <h3>Résultats — Saisie bureau (Tour {tourActuel})</h3>
-
-      {!forcedBureauId && (
-        <div style={{ margin: '10px 0' }}>
-          <label style={{ marginRight: 8 }}>Bureau :</label>
-          <select
-            value={selectedBureauId}
-            onChange={(e) => setSelectedBureauId(String(e.target.value))}
-          >
-            <option value="">— Sélectionner —</option>
-            {bureauOptions.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.id} — {b.nom}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
       {loading ? (
         <p>Chargement…</p>
-      ) : !selectedBureauId ? (
-        <p>Choisir un bureau pour saisir les résultats.</p>
       ) : (
         <>
+          {/* CONTENEUR ENGLOBANT TOUT (H3 + message + dropdown + État validation) */}
+          <div style={{
+            background: '#fff',
+            borderRadius: 12,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+            border: '2px solid #e5e7eb',
+            padding: 20,
+            margin: '0 0 20px 0'
+          }}>
+            <h3>Résultats — Saisie bureau (Tour {tourActuel})</h3>
+
+            {/* Message d'instruction - Compact au-dessus du sélecteur */}
+            {!selectedBureauId && !forcedBureauId && (
+              <div style={{
+                background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+                border: '2px solid #3b82f6',
+                borderRadius: 8,
+                padding: '12px 20px',
+                margin: '0 0 12px 0',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12
+              }}>
+                <span style={{ fontSize: 24 }}>📝</span>
+                <span style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: '#1e40af'
+                }}>
+                  ✅ Validation des résultats - Tour {tourActuel} : Choisir un bureau dans la liste ci-dessous
+                </span>
+              </div>
+            )}
+
+            {!forcedBureauId && !isAdmin && (
+              <div style={{ margin: '10px 0' }}>
+                <label style={{ marginRight: 8 }}>Bureau :</label>
+                <select
+                  value={selectedBureauId}
+                  onChange={(e) => setSelectedBureauId(String(e.target.value))}
+                >
+                  <option value="">— Sélectionner —</option>
+                  {bureauOptions.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.id} — {b.nom}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+          {/* Tableau de visualisation des bureaux (ADMIN uniquement) - TOUJOURS VISIBLE */}
+          {isAdmin && bureauxStatuses.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ 
+                fontWeight: 800, 
+                fontSize: 16, 
+                marginBottom: 16,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8
+              }}>
+                <span>📊</span>
+                <span>État de validation des bureaux de vote - Tour {tourActuel}</span>
+              </div>
+              
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(13, 1fr)', // FORCE 13 colonnes sur une ligne
+                gap: 8,
+                overflowX: 'auto',
+                paddingTop: 30,  // Espace pour que la tuile qui monte de 20px ne soit pas coupée
+                paddingBottom: 40 // Espace pour l'emoji doigt sous la tuile sélectionnée
+              }}>
+                {bureauxStatuses.map((bureau) => {
+                  // Couleur selon l'état et le tour
+                  let bgColor, textColor, icon;
+                  const isSelected = isAdmin && selectedBureauId === bureau.id;
+                  
+                  if (bureau.isLocked) {
+                    if (tourActuel === 1) {
+                      // Vert foncé T1
+                      bgColor = 'linear-gradient(135deg, #065f46 0%, #047857 100%)';
+                      textColor = '#fff';
+                      icon = '🔒';
+                    } else {
+                      // Bleu T2
+                      bgColor = 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)';
+                      textColor = '#fff';
+                      icon = '🔒';
+                    }
+                  } else {
+                    // Gris - non verrouillé
+                    bgColor = '#e5e7eb';
+                    textColor = '#6b7280';
+                    icon = '⏳';
+                  }
+                  
+                  return (
+                    <div
+                      key={bureau.id}
+                      style={{
+                        background: bgColor,
+                        color: textColor,
+                        padding: '10px 6px',
+                        borderRadius: 8,
+                        textAlign: 'center',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        boxShadow: bureau.isLocked ? '0 4px 12px rgba(0, 0, 0, 0.15)' : 'none',
+                        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                        cursor: isAdmin ? 'pointer' : 'default',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 3,
+                        minWidth: 0,
+                        position: 'relative',
+                        // Effet tuile sélectionnée - HYPER VISIBLE
+                        transform: isSelected ? 'translateY(-20px) scale(1.15)' : 'translateY(0) scale(1)',
+                        border: isSelected 
+                          ? `4px solid ${tourActuel === 1 ? '#10b981' : '#3b82f6'}` 
+                          : '2px solid transparent',
+                        boxShadow: isSelected 
+                          ? `0 12px 40px ${tourActuel === 1 ? 'rgba(16, 185, 129, 0.6)' : 'rgba(59, 130, 246, 0.6)'}, 0 0 0 4px ${tourActuel === 1 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)'}`
+                          : bureau.isLocked ? '0 4px 12px rgba(0, 0, 0, 0.15)' : 'none',
+                        zIndex: isSelected ? 10 : 1
+                      }}
+                      onClick={isAdmin ? () => setSelectedBureauId(bureau.id) : undefined}
+                      onMouseEnter={isAdmin && !isSelected ? (e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px) scale(1)';
+                        e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.25)';
+                      } : undefined}
+                      onMouseLeave={isAdmin && !isSelected ? (e) => {
+                        e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                        e.currentTarget.style.boxShadow = bureau.isLocked ? '0 4px 12px rgba(0, 0, 0, 0.15)' : 'none';
+                      } : undefined}
+                      title={bureau.isLocked ? `${bureau.nom} - Verrouillé` : `${bureau.nom} - En attente`}
+                    >
+                      {/* Badge validation admin */}
+                      {adminValidated && (
+                        <div style={{
+                          position: 'absolute',
+                          top: -4,
+                          right: -4,
+                          width: 16,
+                          height: 16,
+                          borderRadius: '50%',
+                          background: tourActuel === 1 ? '#10b981' : '#3b82f6',
+                          border: '2px solid #fff',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 10
+                        }}>
+                          ✓
+                        </div>
+                      )}
+                      
+                      <div style={{ fontSize: 16 }}>{icon}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800 }}>{bureau.id}</div>
+                      <div style={{ fontSize: 10, opacity: 0.9, fontWeight: 600 }}>
+                        {bureau.isLocked ? 'Validé' : 'Attente'}
+                      </div>
+                      
+                      {/* Indicateur tuile sélectionnée - Emoji doigt */}
+                      {isSelected && (
+                        <div style={{
+                          position: 'absolute',
+                          bottom: -30,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          fontSize: 24,
+                          animation: 'bounce 1s infinite'
+                        }}>
+                          👆
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Légende */}
+              <div style={{
+                marginTop: 16,
+                paddingTop: 16,
+                borderTop: '1px solid #e5e7eb',
+                display: 'flex',
+                gap: 20,
+                flexWrap: 'wrap',
+                fontSize: 13,
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                {/* Légendes à gauche */}
+                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      background: '#e5e7eb'
+                    }} />
+                    <span style={{ color: '#6b7280' }}>En attente</span>
+                  </div>
+                  
+                  {tourActuel === 1 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 4,
+                        background: 'linear-gradient(135deg, #065f46 0%, #047857 100%)'
+                      }} />
+                      <span style={{ color: '#065f46', fontWeight: 600 }}>Verrouillé (T1)</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 4,
+                        background: 'linear-gradient(135deg, #1e40af 0%, #2563eb 100%)'
+                      }} />
+                      <span style={{ color: '#1e40af', fontWeight: 600 }}>Verrouillé (T2)</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bouton ADMIN VERROUILLER à droite */}
+                <button
+                  onClick={() => {
+                    if (adminValidated) {
+                      setShowAdminUnlockModal(true);
+                    } else {
+                      setShowAdminConfirmModal(true);
+                    }
+                  }}
+                  style={{
+                    padding: '14px 32px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: adminValidated 
+                      ? 'linear-gradient(135deg, #64748b 0%, #475569 100%)'  // Gris si validé
+                      : (tourActuel === 1 
+                          ? 'linear-gradient(135deg, #047857 0%, #065f46 100%)'  // Vert foncé T1
+                          : 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)'),  // Bleu T2
+                    color: '#fff',
+                    fontSize: 16,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: adminValidated 
+                      ? '0 6px 20px rgba(100, 116, 139, 0.3)'
+                      : (tourActuel === 1 
+                          ? '0 6px 20px rgba(4, 120, 87, 0.4)'
+                          : '0 6px 20px rgba(37, 99, 235, 0.4)'),
+                    transition: 'all 0.3s',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    minWidth: 280,
+                    justifyContent: 'center'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.transform = 'translateY(-2px)';
+                    e.target.style.boxShadow = adminValidated 
+                      ? '0 8px 24px rgba(100, 116, 139, 0.4)'
+                      : (tourActuel === 1 
+                          ? '0 8px 24px rgba(4, 120, 87, 0.5)'
+                          : '0 8px 24px rgba(37, 99, 235, 0.5)');
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.transform = 'translateY(0)';
+                    e.target.style.boxShadow = adminValidated 
+                      ? '0 6px 20px rgba(100, 116, 139, 0.3)'
+                      : (tourActuel === 1 
+                          ? '0 6px 20px rgba(4, 120, 87, 0.4)'
+                          : '0 6px 20px rgba(37, 99, 235, 0.4)');
+                  }}
+                  title={adminValidated 
+                    ? 'Cliquer pour déverrouiller (modification exceptionnelle)' 
+                    : 'Valider administrativement tous les bureaux de vote'}
+                >
+                  <span style={{ fontSize: 24 }}>{adminValidated ? '🔓' : '🔐'}</span>
+                  <span>{adminValidated ? 'Déverrouiller' : 'Verrouiller tous les bureaux'}</span>
+                </button>
+              </div>
+            </div>
+          )}
+          </div>
+          {/* FIN CONTENEUR ENGLOBANT */}
+
+          {!selectedBureauId ? null : (
+            <>
           {/* Bloc principaux - RESPONSIVE */}
           <div className="resultats-saisie-grid">
             {/* INSCRITS */}
@@ -387,7 +1278,13 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
                 value={inputsMain.votants}
                 onChange={(e) => setInputsMain((prev) => ({ ...prev, votants: e.target.value }))}
                 onBlur={() => onBlurMain('votants')}
-                style={{ width: '100%', padding: 6 }}
+                disabled={(isLocked || adminValidated) && !isAdmin}
+                style={{ 
+                  width: '100%', 
+                  padding: 6,
+                  background: ((isLocked || adminValidated) && !isAdmin) ? '#f0f0f0' : '#fff',
+                  cursor: ((isLocked || adminValidated) && !isAdmin) ? 'not-allowed' : 'text'
+                }}
               />
             </div>
 
@@ -400,7 +1297,13 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
                 value={inputsMain.blancs}
                 onChange={(e) => setInputsMain((prev) => ({ ...prev, blancs: e.target.value }))}
                 onBlur={() => onBlurMain('blancs')}
-                style={{ width: '100%', padding: 6 }}
+                disabled={(isLocked || adminValidated) && !isAdmin}
+                style={{ 
+                  width: '100%', 
+                  padding: 6,
+                  background: ((isLocked || adminValidated) && !isAdmin) ? '#f0f0f0' : '#fff',
+                  cursor: ((isLocked || adminValidated) && !isAdmin) ? 'not-allowed' : 'text'
+                }}
               />
             </div>
 
@@ -413,7 +1316,13 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
                 value={inputsMain.nuls}
                 onChange={(e) => setInputsMain((prev) => ({ ...prev, nuls: e.target.value }))}
                 onBlur={() => onBlurMain('nuls')}
-                style={{ width: '100%', padding: 6 }}
+                disabled={(isLocked || adminValidated) && !isAdmin}
+                style={{ 
+                  width: '100%', 
+                  padding: 6,
+                  background: ((isLocked || adminValidated) && !isAdmin) ? '#f0f0f0' : '#fff',
+                  cursor: ((isLocked || adminValidated) && !isAdmin) ? 'not-allowed' : 'text'
+                }}
               />
             </div>
 
@@ -433,10 +1342,10 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
           </div>
 
 
-          {/* Infos bureau + contrôles (BV et ADMIN, écran + responsive) */}
+          {/* Infos bureau + contrôles + BOUTON VERROUILLER (4ème position) */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, margin: '0 0 14px' }}>
             <div style={{
-              flex: '1 1 320px',
+              flex: '1 1 280px',
               background: '#dbeafe',
               border: '1px solid #bfdbfe',
               borderRadius: 10,
@@ -451,13 +1360,13 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
             </div>
 
             <div style={{
-              flex: '1 1 320px',
+              flex: '1 1 280px',
               background: controles.ctrl1Ok ? '#dcfce7' : '#fee2e2',
               border: `1px solid ${controles.ctrl1Ok ? '#86efac' : '#fca5a5'}`,
               borderRadius: 10,
               padding: 10
             }}>
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>✅ Contrôle</div>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>✅ Contrôle ⬆️</div>
               <div style={{ fontSize: 14, lineHeight: 1.35 }}>
                 Votants = Blancs + Nuls + Exprimés<br />
                 <strong>{controles.votants.toLocaleString('fr-FR')}</strong>
@@ -471,13 +1380,13 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
             </div>
 
             <div style={{
-              flex: '1 1 320px',
+              flex: '1 1 280px',
               background: controles.ctrl2Ok ? '#dcfce7' : '#fee2e2',
               border: `1px solid ${controles.ctrl2Ok ? '#86efac' : '#fca5a5'}`,
               borderRadius: 10,
               padding: 10
             }}>
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>✅ Contrôle</div>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>✅ Contrôle ⬇️</div>
               <div style={{ fontSize: 14, lineHeight: 1.35 }}>
                 Somme des voix = Exprimés<br />
                 <strong>{controles.sommeVoix.toLocaleString('fr-FR')}</strong>
@@ -485,16 +1394,83 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
                 {controles.exprimes.toLocaleString('fr-FR')}
               </div>
             </div>
+
+            {/* Bouton VERROUILLER en 4ème position (uniquement pour profils BV) */}
+            {!isAdmin && (
+              <div 
+                className="btn-verrouiller-container"
+                style={{
+                  flex: '1 1 280px',
+                  background: adminValidated
+                    ? '#f3f4f6'  // Gris très clair si admin a validé
+                    : (isLocked 
+                        ? '#94a3b8'  // Gris si BV a verrouillé
+                        : (canLock 
+                            ? '#fef3c7'  // Jaune clair si activable
+                            : '#f3f4f6')),  // Gris très clair si désactivé
+                  border: adminValidated
+                    ? '1px solid #d1d5db'
+                    : (isLocked 
+                        ? '1px solid #64748b' 
+                        : (canLock 
+                            ? '1px solid #fbbf24' 
+                            : '1px solid #e5e7eb')),
+                  borderRadius: 10,
+                  padding: 10,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  cursor: (adminValidated || !canLock) ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s',
+                  minHeight: 80,
+                  opacity: adminValidated ? 0.6 : 1
+                }}
+                onClick={() => {
+                  if (!adminValidated && canLock) {
+                    setShowConfirmModal(true);
+                  }
+                }}
+                title={
+                  adminValidated
+                    ? 'Verrouillage bloqué : l\'administrateur a validé tous les bureaux'
+                    : (isLocked 
+                        ? 'Saisie déjà verrouillée' 
+                        : (canLock 
+                            ? 'Cliquer pour verrouiller la saisie'
+                            : 'Remplir tous les champs et valider les contrôles'))
+                }
+              >
+                <div style={{ 
+                  fontSize: 32, 
+                  marginBottom: 4,
+                  opacity: adminValidated ? 0.4 : (canLock || isLocked ? 1 : 0.5)
+                }}>
+                  {adminValidated ? '🔒' : (isLocked ? '🔒' : '🔐')}
+                </div>
+                <div style={{ 
+                  fontWeight: 800, 
+                  fontSize: 13,
+                  textAlign: 'center',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  opacity: adminValidated ? 0.4 : (canLock || isLocked ? 1 : 0.5),
+                  color: adminValidated ? '#9ca3af' : (isLocked ? '#475569' : (canLock ? '#f59e0b' : '#9ca3af'))
+                }}>
+                  {adminValidated ? 'Admin validé' : (isLocked ? 'Verrouillé' : 'Verrouiller')}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Tableau voix */}
           <div className="resultats-voix-box"><div className="resultats-voix-scroll">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Liste</th>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Tête de liste</th>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Voix</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '23%' }}>Liste</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '8%' }}>Voix</th>
+				<th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Tête de liste</th>
               </tr>
             </thead>
             <tbody>
@@ -506,17 +1482,23 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
                 return (
                   <tr key={listeId || nomListe || Math.random().toString(16).slice(2)}>
                     <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>{listeId || '—'} {nomListe ? `— ${nomListe}` : ''}</td>
-                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>{tete || '—'}</td>
-                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6, width: 160 }}>
+                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>
                       <input
                         type="text"
                         inputMode="numeric"
                         value={inputsVoix[listeId] ?? ''}
                         onChange={(e) => setInputsVoix((prev) => ({ ...prev, [listeId]: e.target.value }))}
                         onBlur={() => onBlurVoix(listeId)}
-                        style={{ width: '100%', padding: 6 }}
+                        disabled={(isLocked || adminValidated) && !isAdmin}
+                        style={{ 
+                          width: '100%', 
+                          padding: 6,
+                          background: ((isLocked || adminValidated) && !isAdmin) ? '#f0f0f0' : '#fff',
+                          cursor: ((isLocked || adminValidated) && !isAdmin) ? 'not-allowed' : 'text'
+                        }}
                       />
                     </td>
+                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>{tete || '—'}</td>
                   </tr>
                 );
               })}
@@ -531,6 +1513,8 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
             </table>
           </div>
         </div>
+        </>
+      )}
         </>
       )}
     </div>

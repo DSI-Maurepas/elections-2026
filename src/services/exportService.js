@@ -1445,7 +1445,7 @@ const data = (auditData || [])
     ]);
 
     // Normalisation Seats_Municipal (par tour)
-    const seatsMunicipalRows = (Array.isArray(seatsMunicipalRaw) ? seatsMunicipalRaw : [])
+    let seatsMunicipalRows = (Array.isArray(seatsMunicipalRaw) ? seatsMunicipalRaw : [])
       .filter(r => Number(r?.tour ?? r?.Tour ?? 0) === t)
       .filter(r => (r?.nomListe || r?.NomListe || r?.listeId || r?.ListeID))
       .map(r => ({
@@ -1458,7 +1458,7 @@ const data = (auditData || [])
       .filter(r => r.listeId && r.nomListe);
 
     // Normalisation Seats_Community (pas forcément par tour)
-    const seatsCommunityRows = (Array.isArray(seatsCommunityRaw) ? seatsCommunityRaw : [])
+    let seatsCommunityRows = (Array.isArray(seatsCommunityRaw) ? seatsCommunityRaw : [])
       .filter(r => (r?.nomListe || r?.NomListe || r?.listeId || r?.ListeID))
       .map(r => ({
         listeId: (r.listeId || r.ListeID || '').toString().trim(),
@@ -1469,7 +1469,58 @@ const data = (auditData || [])
       }))
       .filter(r => r.listeId && r.nomListe);
 
-    // 2) Calcul métier (on ne fait confiance qu'aux voix + %)
+    // 2) CALCUL DE REPLI : Si Seats_* vides, consolider depuis Resultats + Candidats
+    if (seatsMunicipalRows.length === 0 || seatsCommunityRows.length === 0) {
+      const sheetNameResultats = t === 1 ? SHEET_NAMES.RESULTATS_T1 : SHEET_NAMES.RESULTATS_T2;
+      
+      const [resultats, candidats] = await Promise.all([
+        googleSheetsService.getData(sheetNameResultats),
+        googleSheetsService.getData(SHEET_NAMES.CANDIDATS)
+      ]);
+
+      if (resultats && candidats && resultats.length > 0 && candidats.length > 0) {
+        // Filtrer les candidats actifs au tour
+        const candidatsActifs = candidats.filter(c => t === 1 ? c.actifT1 : c.actifT2);
+
+        if (candidatsActifs.length > 0) {
+          // Consolider les voix par candidat
+          const listesConsolidees = candidatsActifs.map(candidat => {
+            const listeId = candidat.listeId || candidat.ListeID || '';
+            const nomListe = candidat.nomListe || candidat.NomListe || listeId;
+
+            // Somme des voix pour cette liste sur tous les bureaux
+            const totalVoix = resultats.reduce((sum, bureau) => {
+              const voixObj = bureau.voix || {};
+              const voix = Number(voixObj[listeId]) || 0;
+              return sum + voix;
+            }, 0);
+
+            return {
+              listeId,
+              nomListe,
+              voix: totalVoix,
+              eligible: true
+            };
+          });
+
+          // Si Seats_Municipal vide, utiliser les listes consolidées
+          if (seatsMunicipalRows.length === 0) {
+            seatsMunicipalRows = listesConsolidees;
+          }
+
+          // Si Seats_Community vide, utiliser les listes consolidées (avec voixMunicipal)
+          if (seatsCommunityRows.length === 0) {
+            seatsCommunityRows = listesConsolidees.map(l => ({
+              ...l,
+              voixMunicipal: l.voix,
+              pctMunicipal: l.pctVoix
+            }));
+          }
+        }
+      }
+    }
+
+    // 3) Calcul métier (on ne fait confiance qu'aux voix + %)
     const totalMunicipal = Number(ELECTION_CONFIG.SEATS_MUNICIPAL_TOTAL) || 35;
     const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 6;
 
@@ -1495,8 +1546,8 @@ const data = (auditData || [])
         seatsCommunityRows.map(r => ({
           listeId: r.listeId,
           nomListe: r.nomListe,
-          voixMunicipal: r.voix,
-          pctMunicipal: Number.isFinite(r.pctVoix) ? r.pctVoix : null,
+          voixMunicipal: r.voix || r.voixMunicipal,
+          pctMunicipal: Number.isFinite(r.pctVoix || r.pctMunicipal) ? (r.pctVoix || r.pctMunicipal) : null,
           eligible: r.eligible
         })),
         totalCommunity

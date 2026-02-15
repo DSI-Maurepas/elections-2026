@@ -46,17 +46,70 @@ const SiegesMunicipal = ({ electionState}) => {
       return;
     }
 
+    // Calcul de repli : consolider les voix depuis Resultats_T2 + Candidats
     if (!resultats?.length || !candidats?.length) {
       setSieges([]);
       return;
     }
-    const results = calculService.calculerSiegesMunicipaux(resultats, candidats, totalSieges, { tour: state.tourActuel });
-    setSieges(Array.isArray(results) ? results : []);
+
+    // 1. Filtrer les candidats actifs au tour actuel
+    const candidatsActifs = candidats.filter(c => state.tourActuel === 1 ? c.actifT1 : c.actifT2);
+    
+    if (candidatsActifs.length === 0) {
+      setSieges([]);
+      return;
+    }
+
+    // 2. Consolider les voix par candidat (somme de tous les bureaux)
+    const listesConsolidees = candidatsActifs.map(candidat => {
+      const listeId = candidat.listeId || candidat.ListeID || '';
+      const nomListe = candidat.nomListe || candidat.NomListe || listeId;
+      
+      // Somme des voix pour cette liste sur tous les bureaux
+      // Les voix sont dans bureau.voix qui est un objet {L1: 770, L2: 249, L3: 200, ...}
+      const totalVoix = resultats.reduce((sum, bureau) => {
+        const voixObj = bureau.voix || {};
+        const voix = Number(voixObj[listeId]) || 0;
+        return sum + voix;
+      }, 0);
+      
+      return {
+        listeId,
+        nomListe,
+        voix: totalVoix,
+        eligible: true
+      };
+    });
+
+    // 3. Calculer la répartition avec la fonction qui fonctionne
+    const recalcules = calculService
+      .calculerSiegesMunicipauxDepuisListes(listesConsolidees, totalSieges)
+      .map(r => {
+        const prime = Number(r?.siegesPrime ?? 0) || 0;
+        const prop = Number(r?.siegesProportionnels ?? 0) || 0;
+        const methode = prime > 0
+          ? `Prime (${prime}) + Proportionnelle (${prop})`
+          : `Proportionnelle (${prop})`;
+        return { ...r, methode };
+      });
+    
+    setSieges(recalcules);
   }, [seatsMunicipalTour, resultats, candidats, totalSieges, state.tourActuel]);
 
   return (
-    <div className="sieges-municipal">
-      <h3>🪑 Répartition des sièges - Conseil Municipal</h3>
+    <div 
+      className="sieges-municipal"
+      style={{
+        background: '#fff',
+        borderRadius: 12,
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+        border: '2px solid #e5e7eb',
+        borderTop: '4px solid #10b981',
+        padding: 0,
+        marginBottom: 24,
+        overflow: 'hidden'
+      }}
+    >
       
       <style>{`
 /* Sticky + scroll uniquement pour les tableaux Sièges */
@@ -144,39 +197,48 @@ const SiegesMunicipal = ({ electionState}) => {
   background: #f3f3f3;
 }
 
-/* ⚠️ CORRECTION : Styles pour total-sieges et explication */
-.total-sieges {
-  background: #e3f2fd;
-  padding: 12px 20px;
-  margin: 16px 0;
-  border-left: 4px solid #2196F3;
-  font-size: 1.1rem;
-}
-
-.explication {
-  background: #fff3cd;
-  border-left: 4px solid #ff9800;
-  padding: 16px 20px;
-  margin: 20px 0;
-  border-radius: 4px;
-}
-
-.explication h4 {
-  margin: 0 0 12px 0;
-  color: #f57c00;
-  font-size: 1.1rem;
-}
-
-.explication p {
-  margin: 6px 0;
-  color: #666;
-}
-
       `}</style>
       
-      <div className="total-sieges">
-        Total sièges à attribuer : <strong> {totalSieges} </strong>
+      {/* Header compact moderne */}
+      <div style={{ 
+        padding: '16px 20px',
+        borderBottom: '2px solid #f3f4f6',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 16
+      }}>
+        {/* Titre */}
+        <div style={{ 
+          fontSize: 18, 
+          fontWeight: 800, 
+          color: '#1e293b',
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 10
+        }}>
+          <span style={{ fontSize: 20 }}>🪑</span>
+          <span>Répartition des sièges — Conseil Municipal</span>
+        </div>
+
+        {/* Total sièges inline */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 6,
+          fontSize: 14,
+          color: '#64748b'
+        }}>
+          <span>Total sièges à attribuer :</span>
+          <span style={{ fontWeight: 800, color: '#1e293b', fontSize: 18 }}>
+            {totalSieges}
+          </span>
+        </div>
       </div>
+
+      {/* Corps du bloc - Tableau */}
+      <div style={{ padding: 20 }}>
 
       <div className="sieges-scroll">
         <table className="sieges-table">
@@ -227,11 +289,31 @@ const SiegesMunicipal = ({ electionState}) => {
         </table>
       </div>
 
-      {/* ⚠️ CORRECTION : Bloc explication en orange/jaune */}
-      <div className="explication">
-        <h4>Méthode de calcul :</h4>
-        <p>Prime majoritaire : 50% des sièges (arrondi au supérieur) à la liste en tête</p>
-        <p>Reste : proportionnelle à la plus forte moyenne, seuil 5%</p>
+      {/* Bloc méthode de calcul moderne */}
+      <div style={{
+        background: 'rgba(251, 191, 36, 0.08)',
+        borderLeft: '4px solid #f59e0b',
+        borderRadius: 8,
+        padding: '14px 18px',
+        marginTop: 16
+      }}>
+        <div style={{ 
+          fontSize: 13, 
+          fontWeight: 700, 
+          color: '#92400e', 
+          marginBottom: 8,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6
+        }}>
+          <span>ℹ️</span>
+          <span>Méthode de calcul</span>
+        </div>
+        <div style={{ fontSize: 12, color: '#78350f', lineHeight: 1.6 }}>
+          <div style={{ marginBottom: 4 }}>• Prime majoritaire : 50% des sièges (arrondi au supérieur) à la liste en tête</div>
+          <div>• Reste : proportionnelle à la plus forte moyenne, seuil 5%</div>
+        </div>
+      </div>
       </div>
     </div>
   );

@@ -14,8 +14,7 @@ const normalizeBureauId = (value) => {
 
 /**
  * Consolidation des résultats
- * 
- * ⚠️ CORRECTION (2026-02-09) :
+ * * ⚠️ CORRECTION (2026-02-09) :
  * - Les BV voient les inscrits communaux en CONTEXTE uniquement
  * - Les calculs (participation, abstentions) utilisent les données du BUREAU pour les BV
  * - Les Global/Admin voient la consolidation complète communale
@@ -505,7 +504,7 @@ const ResultatsConsolidation = ({ electionState}) => {
             background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.11) 0%, rgba(192, 132, 252, 0.07) 100%)'
           }}>
             <div className="stats-card-label">
-              📈 Écart 1er / 2ème
+              📈 Écart entre liste 1 et 2
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
               <div className="stats-card-value">
@@ -629,23 +628,43 @@ const ResultatsConsolidation = ({ electionState}) => {
           </div>
         </div>
 
-        {/* ===== Deuxième ligne : 3 blocs ===== */}
+        {/* ===== Deuxième ligne : 3 blocs (MODIFIÉ) ===== */}
         <div className="stats-grid-3">
-          {/* Bureaux déclarés */}
-          <div className="stats-card" style={{
-            border: '2px solid rgba(34, 197, 94, 0.55)',
-            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.11) 0%, rgba(134, 239, 172, 0.07) 100%)'
-          }}>
-            <div className="stats-card-label">
-              📊 Bureaux déclarés
-            </div>
-            <div className="stats-card-value">
-              {nbBureauxDeclares} / {nbBureaux}
-            </div>
-            <div className="stats-card-meta">
-              {nbBureaux > 0 ? ((nbBureauxDeclares / nbBureaux) * 100).toFixed(0) : 0}%
-            </div>
-          </div>
+          
+          {/* LOGIQUE CONDITIONNELLE : Si Bureau -> Écart, Sinon -> Bureaux déclarés */}
+          {isBureau ? (
+             /* Bloc Écart (Format carré pour s'intégrer) */
+             <div className="stats-card" style={{
+               border: '2px solid rgba(168, 85, 247, 0.55)',
+               background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.11) 0%, rgba(192, 132, 252, 0.07) 100%)'
+             }}>
+               <div className="stats-card-label">
+                 📈 Écart liste 1 / 2
+               </div>
+               <div className="stats-card-value">
+                 {ecartVoix !== null ? ecartVoix.toLocaleString('fr-FR') : 'N/A'}
+               </div>
+               <div className="stats-card-meta" style={{ fontSize: '0.85rem', lineHeight: 1.2 }}>
+                 {ecartLabel}
+               </div>
+             </div>
+          ) : (
+             /* Bloc Bureaux déclarés (Considéré comme admin ou global) */
+             <div className="stats-card" style={{
+               border: '2px solid rgba(34, 197, 94, 0.55)',
+               background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.11) 0%, rgba(134, 239, 172, 0.07) 100%)'
+             }}>
+               <div className="stats-card-label">
+                 📊 Bureaux déclarés
+               </div>
+               <div className="stats-card-value">
+                 {nbBureauxDeclares} / {nbBureaux}
+               </div>
+               <div className="stats-card-meta">
+                 {nbBureaux > 0 ? ((nbBureauxDeclares / nbBureaux) * 100).toFixed(0) : 0}%
+               </div>
+             </div>
+          )}
 
           {/* Taux de blancs */}
           <div className="stats-card" style={{
@@ -680,26 +699,28 @@ const ResultatsConsolidation = ({ electionState}) => {
           </div>
         </div>
 
-        {/* ===== Troisième ligne : 1 bloc pleine largeur ===== */}
-        <div className="stats-grid-1">
-          {/* Écart 1er/2ème */}
-          <div className="stats-card" style={{
-            border: '2px solid rgba(168, 85, 247, 0.55)',
-            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.11) 0%, rgba(192, 132, 252, 0.07) 100%)'
-          }}>
-            <div className="stats-card-label">
-              📈 Écart 1er / 2ème
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
-              <div className="stats-card-value">
-                {ecartVoix !== null ? ecartVoix.toLocaleString('fr-FR') : 'N/A'} voix
+        {/* ===== Troisième ligne : 1 bloc pleine largeur (Masqué pour BV qui l'a déjà au dessus) ===== */}
+        {!isBureau && (
+          <div className="stats-grid-1">
+            {/* Écart 1er/2ème (Format large) */}
+            <div className="stats-card" style={{
+              border: '2px solid rgba(168, 85, 247, 0.55)',
+              background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.11) 0%, rgba(192, 132, 252, 0.07) 100%)'
+            }}>
+              <div className="stats-card-label">
+                📈 Écart entre liste 1 et 2
               </div>
-              <div className="stats-card-meta" style={{ fontSize: '1.1rem' }}>
-                {ecartLabel}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+                <div className="stats-card-value">
+                  {ecartVoix !== null ? ecartVoix.toLocaleString('fr-FR') : 'N/A'} voix
+                </div>
+                <div className="stats-card-meta" style={{ fontSize: '1.1rem' }}>
+                  {ecartLabel}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         
           </>
@@ -710,17 +731,17 @@ const ResultatsConsolidation = ({ electionState}) => {
         {!isBureau && adminExtremes && (
           <div style={{ marginTop: 18, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
             {/* Ligne 3 : Participation */}
-            <div className="stats-card" style={{ border: '2px solid rgba(59,130,246,0.55)', background: 'linear-gradient(135deg, rgba(59,130,246,0.10) 0%, rgba(147,197,253,0.08) 100%)' }}>
+            <div className="stats-card" style={{ border: '2px solid rgba(59,130,246,0.10)', background: 'linear-gradient(135deg, rgba(59,130,246,0.55) 0%, rgba(147,197,253,0.08) 100%)' }}>
               <div className="stats-card-label">📈 Bureau avec la plus forte participation</div>
-              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusPart?.label || '—'}</div>
+              <div className="stats-card-value" style={{ fontSize: '0.90rem' }}>{adminExtremes.plusPart?.label || '—'}</div>
               <div className="stats-card-meta">
                 {(adminExtremes.plusPart?.votants ?? 0).toLocaleString('fr-FR')} votants • {clampPct(adminExtremes.plusPart?.participationPct ?? 0).toFixed(2)}%
               </div>
             </div>
 
-            <div className="stats-card" style={{ border: '2px solid rgba(99,102,241,0.55)', background: 'linear-gradient(135deg, rgba(99,102,241,0.10) 0%, rgba(199,210,254,0.08) 100%)' }}>
+            <div className="stats-card" style={{ border: '2px solid rgba(99,102,241,0.55)', background: 'linear-gradient(135deg, rgba(99,102,241,0.05) 100%, rgba(199,210,254,0.08) 0%)' }}>
               <div className="stats-card-label">📉 Bureau avec la moins forte participation</div>
-              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsPart?.label || '—'}</div>
+              <div className="stats-card-value" style={{ fontSize: '0.90rem' }}>{adminExtremes.moinsPart?.label || '—'}</div>
               <div className="stats-card-meta">
                 {(adminExtremes.moinsPart?.votants ?? 0).toLocaleString('fr-FR')} votants • {clampPct(adminExtremes.moinsPart?.participationPct ?? 0).toFixed(2)}%
               </div>
@@ -729,7 +750,7 @@ const ResultatsConsolidation = ({ electionState}) => {
             {/* Ligne 4 : Abstention */}
             <div className="stats-card" style={{ border: '2px solid rgba(244,63,94,0.55)', background: 'linear-gradient(135deg, rgba(244,63,94,0.10) 0%, rgba(254,205,211,0.08) 100%)' }}>
               <div className="stats-card-label">🚫 Bureau avec la plus forte abstention</div>
-              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusAbs?.label || '—'}</div>
+              <div className="stats-card-value" style={{ fontSize: '0.90rem' }}>{adminExtremes.plusAbs?.label || '—'}</div>
               <div className="stats-card-meta">
                 {(adminExtremes.plusAbs?.abstentions ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.plusAbs?.abstentionPct ?? 0).toFixed(2)}%
               </div>
@@ -737,7 +758,7 @@ const ResultatsConsolidation = ({ electionState}) => {
 
             <div className="stats-card" style={{ border: '2px solid rgba(16,185,129,0.55)', background: 'linear-gradient(135deg, rgba(16,185,129,0.10) 0%, rgba(167,243,208,0.08) 100%)' }}>
               <div className="stats-card-label">✅ Bureau avec la moins forte abstention</div>
-              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsAbs?.label || '—'}</div>
+              <div className="stats-card-value" style={{ fontSize: '0.90rem' }}>{adminExtremes.moinsAbs?.label || '—'}</div>
               <div className="stats-card-meta">
                 {(adminExtremes.moinsAbs?.abstentions ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.moinsAbs?.abstentionPct ?? 0).toFixed(2)}%
               </div>
@@ -745,244 +766,40 @@ const ResultatsConsolidation = ({ electionState}) => {
 
             {/* Ligne 5 : Nuls */}
             <div className="stats-card" style={{ border: '2px solid rgba(234,179,8,0.55)', background: 'linear-gradient(135deg, rgba(234,179,8,0.10) 0%, rgba(253,230,138,0.10) 100%)' }}>
-              <div className="stats-card-label">⚫ Bureau avec le taux de nuls le plus élevé</div>
-              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusNuls?.label || '—'}</div>
+              <div className="stats-card-label">⚫⬆️ Bureau avec le taux de nuls le plus élevé</div>
+              <div className="stats-card-value" style={{ fontSize: '0.90rem' }}>{adminExtremes.plusNuls?.label || '—'}</div>
               <div className="stats-card-meta">
                 {(adminExtremes.plusNuls?.nuls ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.plusNuls?.nulsPct ?? 0).toFixed(2)}%
               </div>
             </div>
 
             <div className="stats-card" style={{ border: '2px solid rgba(148,163,184,0.65)', background: 'linear-gradient(135deg, rgba(148,163,184,0.14) 0%, rgba(226,232,240,0.10) 100%)' }}>
-              <div className="stats-card-label">⚪ Bureau avec le taux de nuls le moins élevé</div>
-              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsNuls?.label || '—'}</div>
+              <div className="stats-card-label">⚫⬇️ Bureau avec le taux de nuls le moins élevé</div>
+              <div className="stats-card-value" style={{ fontSize: '0.90rem' }}>{adminExtremes.moinsNuls?.label || '—'}</div>
               <div className="stats-card-meta">
                 {(adminExtremes.moinsNuls?.nuls ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.moinsNuls?.nulsPct ?? 0).toFixed(2)}%
               </div>
             </div>
 
             {/* Ligne 6 : Blancs */}
-            <div className="stats-card" style={{ border: '2px solid rgba(147,51,234,0.55)', background: 'linear-gradient(135deg, rgba(147,51,234,0.10) 0%, rgba(233,213,255,0.10) 100%)' }}>
-              <div className="stats-card-label">⚪ Bureau avec le plus de bulletins blancs</div>
-              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.plusBlancs?.label || '—'}</div>
+            <div className="stats-card" style={{ border: '2px solid rgba(147,51,234,0.95)', background: 'linear-gradient(135deg, rgba(147,51,234,0.30) 0%, rgba(233,213,255,0.10) 100%)' }}>
+              <div className="stats-card-label">⬜ Bureau avec le plus de bulletins blancs</div>
+              <div className="stats-card-value" style={{ fontSize: '0.90rem' }}>{adminExtremes.plusBlancs?.label || '—'}</div>
               <div className="stats-card-meta">
                 {(adminExtremes.plusBlancs?.blancs ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.plusBlancs?.blancsPct ?? 0).toFixed(2)}%
               </div>
             </div>
 
-            <div className="stats-card" style={{ border: '2px solid rgba(203,213,225,0.85)', background: 'linear-gradient(135deg, rgba(203,213,225,0.18) 0%, rgba(241,245,249,0.12) 100%)' }}>
+            <div className="stats-card" style={{ border: '2px solid rgba(55,55,55,5.85)', background: 'linear-gradient(135deg, rgba(203,213,225,0.68) 100%, rgba(155,245,249,0.72) 0%)' }}>
               <div className="stats-card-label">⚪ Bureau avec le moins de bulletins blancs</div>
-              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>{adminExtremes.moinsBlancs?.label || '—'}</div>
+              <div className="stats-card-value" style={{ fontSize: '0.90rem' }}>{adminExtremes.moinsBlancs?.label || '—'}</div>
               <div className="stats-card-meta">
                 {(adminExtremes.moinsBlancs?.blancs ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.moinsBlancs?.blancsPct ?? 0).toFixed(2)}%
               </div>
             </div>
-
-            {/* Ligne 7 : Progression T1 -> T2 */}
-            <div className="stats-card" style={{ border: '2px solid rgba(34,197,94,0.55)', background: 'linear-gradient(135deg, rgba(34,197,94,0.11) 0%, rgba(134,239,172,0.07) 100%)' }}>
-              <div className="stats-card-label">🚀 Plus forte progression de votants 1er/2nd Tour</div>
-              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>
-                {electionState.tourActuel === 2 ? (adminExtremes.progMax ? `BV${adminExtremes.progMax.id}` : '—') : 'Disponible en Tour 2'}
-              </div>
-              {electionState.tourActuel === 2 && adminExtremes.progMax && (
-                <div className="stats-card-meta">
-                  {Number(adminExtremes.progMax.deltaVotants ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.progMax.deltaPts ?? 0).toFixed(2)} pts
-                </div>
-              )}
-            </div>
-
-            <div className="stats-card" style={{ border: '2px solid rgba(239,68,68,0.55)', background: 'linear-gradient(135deg, rgba(239,68,68,0.10) 0%, rgba(254,202,202,0.08) 100%)' }}>
-              <div className="stats-card-label">🐢 Moins forte progression de votants 1er/2nd Tour</div>
-              <div className="stats-card-value" style={{ fontSize: '1.05rem' }}>
-                {electionState.tourActuel === 2 ? (adminExtremes.progMin ? `BV${adminExtremes.progMin.id}` : '—') : 'Disponible en Tour 2'}
-              </div>
-              {electionState.tourActuel === 2 && adminExtremes.progMin && (
-                <div className="stats-card-meta">
-                  {Number(adminExtremes.progMin.deltaVotants ?? 0).toLocaleString('fr-FR')} • {clampPct(adminExtremes.progMin.deltaPts ?? 0).toFixed(2)} pts
-                </div>
-              )}
-            </div>
           </div>
         )}
 
-{/* ===== Classement officiel ===== */}
-        <div
-          style={{
-            marginTop: 22,
-            borderRadius: 18,
-            border: '1px solid rgba(15, 23, 42, 0.42)',
-            boxShadow: '0 14px 30px rgba(2, 6, 23, 0.50)',
-            background:
-              'linear-gradient(135deg, rgba(59, 130, 246, 0.70) 0%, rgba(255,255,255,0.75) 55%, rgba(34, 197, 94, 0.08) 100%)',
-            padding: '16px 16px 14px 16px',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
-              flexWrap: 'wrap',
-              marginBottom: 10,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-              <div>
-                <div style={{ fontWeight: 900, fontSize: '1.1rem', lineHeight: 1.1, color: '#0f172a' }}>
-                  🏆 Résultats par candidat {isBureau ? '(votre bureau)' : ''}
-                  <div style={{ marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <br />
-				  </div>
-                  {electionState.tourActuel === 1 && !isBureau && (
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '6px 10px',
-                        borderRadius: 999,
-                        fontWeight: 900,
-                        background: 'rgba(255,255,255,0.92)',
-                        border: '1px solid rgba(15, 23, 42, 0.12)',
-                        boxShadow: '0 8px 14px rgba(2, 6, 23, 0.06)',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      🗳️ Tour {electionState.tourActuel}   📋 Les 2 listes qualifiées
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                gap: 10,
-                flexWrap: 'wrap',
-                justifyContent: 'flex-end',
-              }}
-            >
-              <span style={{ fontWeight: 800, color: 'rgba(15,23,42,0.75)' }}>Suffrages exprimés</span>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '8px 12px',
-                  borderRadius: 14,
-                  fontWeight: 900,
-                  background: 'rgba(255,255,255,0.92)',
-                  border: '2px solid rgba(59, 130, 246, 0.30)',
-                  boxShadow: '0 10px 18px rgba(2, 6, 23, 0.08)',
-                  color: '#0f172a',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                ✍️ {(Number(totaux.exprimes) || 0).toLocaleString('fr-FR')}
-              </span>
-            </div>
-          </div>
-
-          {/* Liste graphique */}
-          {classementCandidats.length > 0 ? (
-            <div style={{ display: 'grid', gap: 10 }}>
-              {(() => {
-                const maxVoix = Math.max(0, ...classementCandidats.map((c) => Number(c.totalVoix) || 0));
-                return classementCandidats.map((c, idx) => {
-                  const voix = Number(c.totalVoix) || 0;
-                  const pct = clampPct(c.pourcentage);
-                  const color = isValidHexColor(c.couleur) ? c.couleur : getCandidateColor(c.listeId, idx);
-
-                  const isQualifie = electionState.tourActuel === 1 && idx < 2 && !isBureau;
-
-                  return (
-                    <div
-                      key={c.listeId || idx}
-                      style={{
-                        width: '100%',
-                        maxWidth: '100%',
-                        boxSizing: 'border-box',
-                        borderRadius: 16,
-                        padding: '10px 22px',
-                        background: 'rgba(255,255,255,0.92)',
-                        border: `2px solid ${isQualifie ? color : 'rgba(15, 23, 42, 0.10)'}`,
-                        boxShadow: '0 10px 18px rgba(2, 6, 23, 0.08)',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: '1 1 0' }}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <span
-                                style={{
-                                  width: 50,
-                                  height: 18,
-                                  borderRadius: 999,
-                                  background: color,
-                                  boxShadow: '0 0 0 5px rgba(15, 23, 42, 0.06)',
-                                  flex: '0 0 auto',
-                                }}
-                              />
-                              <span style={{ fontWeight: 900, fontSize: '1rem', color: '#0f172a' }}>
-                                {c.displayName || getCandidateDisplayName(c)}
-                              </span>
-                              {isQualifie && (
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 6,
-                                    padding: '5px 10px',
-                                    borderRadius: 999,
-                                    fontWeight: 900,
-                                    background: 'rgba(255,255,255,0.92)',
-                                    border: `1px solid ${color}`,
-                                    color: '#0f172a',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  ✅ Liste qualifiée
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ marginTop: 1, color: 'rgba(15,23,42,0.70)', fontWeight: 1000 }}>
-                              {voix.toLocaleString('fr-FR')} voix · {pct.toFixed(2)}%
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 8,
-                              padding: '6px 10px',
-                              borderRadius: 999,
-                              fontWeight: 900,
-                              background: 'rgba(255,255,255,0.92)',
-                              border: '1px solid rgba(15, 23, 42, 0.12)',
-                              color: '#0f172a',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            📊 {pct.toFixed(2)}%
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          ) : (
-            <div style={{ opacity: 0.95 }}>
-              Aucun classement disponible : candidats inactifs pour ce tour, ou résultats non chargés.
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );

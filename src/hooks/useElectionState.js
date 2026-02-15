@@ -173,8 +173,9 @@ export const useElectionState = () => {
     try {
       ensureToken();
 
-      if (!Array.isArray(candidats) || candidats.length !== 2) {
-        throw new Error('Exactement 2 candidats doivent être qualifiés');
+      // Validation : au minimum 2 candidats qualifiés (règle électorale française : tous ceux >= 10% des suffrages exprimés)
+      if (!Array.isArray(candidats) || candidats.length < 2) {
+        throw new Error('Au minimum 2 candidats doivent être qualifiés');
       }
 
       await googleSheetsService.updateElectionState({

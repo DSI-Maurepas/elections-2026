@@ -248,14 +248,16 @@
   gap: 1rem;
   align-items: flex-end;
   height: 300px;
-  padding: 1rem;
+  padding: 2.5rem 1rem 1rem 1rem; /* ↑ on ajoute de l'espace en haut */
   background: #f8f9fa;
   border-radius: 8px;
   margin: 1.5rem 0;
+  overflow-x: auto;    /* ← réactive le scroll horizontal */
+  overflow-y: visible;
 }
 
 .chart-bar {
-  flex: 1;
+  flex: 0 0 42px;  /* largeur fixe minimale */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -282,6 +284,14 @@
   text-align: center;
   font-weight: bold;
   font-size: 0.85rem;
+}
+
+.bar-track {
+  display: flex;
+  align-items: flex-end;
+  height: 220px;       /* hauteur réelle des barres */
+  overflow: visible;   /* <-- IMPORTANT : empêche la coupure du % */
+  width: 100%;
 }
 
 .bar-label {
