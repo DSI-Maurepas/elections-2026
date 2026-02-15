@@ -26,7 +26,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
   const tourActuel = electionState?.tourActuel === 2 ? 2 : 1;
   const resultatsSheet = tourActuel === 2 ? 'Resultats_T2' : 'Resultats_T1';
 
-  const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
+  const { data: bureaux } = useGoogleSheets('Bureaux');
   const { data: candidats } = useGoogleSheets('Candidats');
   const { data: resultats, load: reloadResultats, loading: loadingResultats } = useGoogleSheets(resultatsSheet);
 
@@ -91,6 +91,24 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
     // Nettoyage de l'interval au démontage du composant
     return () => clearInterval(interval);
   }, [tourActuel]);
+
+  // Recalcul automatique des EXPRIMÉS quand les voix changent
+  useEffect(() => {
+    // Calculer la somme des voix de toutes les listes
+    let sommeVoix = 0;
+    Object.keys(inputsVoix).forEach((key) => {
+      const voix = Number(inputsVoix[key]);
+      if (!isNaN(voix)) {
+        sommeVoix += voix;
+      }
+    });
+
+    // Mettre à jour le champ EXPRIMÉS automatiquement
+    setInputsMain((prev) => ({
+      ...prev,
+      exprimes: sommeVoix > 0 ? String(sommeVoix) : ''
+    }));
+  }, [inputsVoix]);
 
   const bureauOptions = useMemo(() => {
     const list = Array.isArray(bureaux) ? bureaux : [];
