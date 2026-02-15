@@ -58,39 +58,105 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
   }, [forcedBureauId]);
 
   // Charger le statut de validation admin depuis Config (pour TOUS les profils)
-  // + Polling automatique toutes les 3 secondes pour mise à jour en temps réel (silencieux)
-  useEffect(() => {
-    let prevValidated = null;
+// IMPORTANT: éviter toute surconsommation Google Sheets (quota Read/min/user)
+// - polling plus espacé
+// - anti-burst (requêtes concurrentes bloquées)
+// - backoff automatique en cas de HTTP 429 (quota exceeded)
+useEffect(() => {
+  let cancelled = false;
 
-    // Fonction de chargement du statut admin
-    const loadAdminStatus = async () => {
+  // État interne de polling (évite les doublons et gère le backoff)
+  const pollState = {
+    prevValidated: null,
+    inFlight: null,
+    lastFetchAt: 0,
+    nextAllowedAt: 0,
+    backoffMs: 0,
+  };
+
+  const MIN_GAP_MS = 5000; // sécurité anti-burst (même si plusieurs triggers)
+  const BASE_INTERVAL_MS = isAdmin ? 10000 : 15000; // BV = moins agressif (quota)
+  const MAX_BACKOFF_MS = 60000;
+
+  const loadAdminStatus = async (reason = 'poll') => {
+    if (cancelled) return;
+
+    const now = Date.now();
+
+    // Pas de requêtes concurrentes
+    if (pollState.inFlight) return pollState.inFlight;
+
+    // Backoff actif
+    if (now < pollState.nextAllowedAt) return;
+
+    // Anti-burst
+    if (now - pollState.lastFetchAt < MIN_GAP_MS) return;
+
+    pollState.lastFetchAt = now;
+
+    pollState.inFlight = (async () => {
       try {
         const config = await googleSheetsService.getConfig();
         const key = tourActuel === 1 ? 'VALIDATION_ADMIN_T1' : 'VALIDATION_ADMIN_T2';
         const validated = config[key] === 'TRUE' || config[key] === true;
-        
-        // Ne mettre à jour que si la valeur a changé (évite re-renders inutiles)
-        if (prevValidated !== validated) {
+
+        if (!cancelled && pollState.prevValidated !== validated) {
           setAdminValidated(validated);
-          prevValidated = validated;
+          pollState.prevValidated = validated;
         }
+
+        // Reset backoff si OK
+        pollState.backoffMs = 0;
+        pollState.nextAllowedAt = 0;
       } catch (e) {
-        console.error('Erreur chargement validation admin:', e);
+        const msg = String(e?.message || '');
+        const status = e?.status || e?.code;
+
+        // Gestion spécifique quota (HTTP 429)
+        const is429 =
+          status === 429 ||
+          msg.includes('HTTP 429') ||
+          msg.includes('Quota exceeded') ||
+          msg.includes('Too Many Requests');
+
+        if (is429) {
+          pollState.backoffMs = pollState.backoffMs
+            ? Math.min(pollState.backoffMs * 2, MAX_BACKOFF_MS)
+            : 10000; // 10s au premier 429
+
+          pollState.nextAllowedAt = Date.now() + pollState.backoffMs;
+
+          // Log non bloquant (1 ligne claire)
+          console.warn(
+            `[Config] Quota Google Sheets (429) pendant lecture validation admin (${reason}). Pause ${Math.round(
+              pollState.backoffMs / 1000
+            )}s.`
+          );
+        } else {
+          console.error('Erreur chargement validation admin:', e);
+        }
+      } finally {
+        pollState.inFlight = null;
       }
-    };
+    })();
 
-    // Chargement initial
-    loadAdminStatus();
+    return pollState.inFlight;
+  };
 
-    // Polling automatique toutes les 3 secondes
-    // UNIQUEMENT le statut admin global (critique pour bloquer les profils BV)
-    const interval = setInterval(() => {
-      loadAdminStatus();
-    }, 3000);
+  // Chargement initial
+  loadAdminStatus('init');
 
-    // Nettoyage de l'interval au démontage du composant
-    return () => clearInterval(interval);
-  }, [tourActuel]);
+  // Polling (espacé) du statut admin global (critique pour bloquer les profils BV)
+  const interval = setInterval(() => {
+    loadAdminStatus('interval');
+  }, BASE_INTERVAL_MS);
+
+  return () => {
+    cancelled = true;
+    clearInterval(interval);
+  };
+}, [tourActuel, isAdmin]);
+
 
   // Recalcul automatique des EXPRIMÉS quand les voix changent
   useEffect(() => {
@@ -970,7 +1036,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
 
         .resultats-voix-scroll table th:nth-child(3),
         .resultats-voix-scroll table td:nth-child(3) {
-          min-width: 90px;
+          min-width: 190px;
         }
 
         /* Colonne 1 sticky : header inchangé, corps avec fond blanc pour éviter la superposition */
@@ -1541,8 +1607,8 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '23%' }}>Liste</th>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '8%' }}>Voix</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '35%' }}>Liste</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '10%' }}>Voix</th>
 				<th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Tête de liste</th>
               </tr>
             </thead>
