@@ -1954,11 +1954,11 @@ input:focus, select:focus, textarea:focus {
 
 .bar-value {
   position: absolute;
-  top: -20px;
+  top: -1px;
   width: 100%;
   text-align: center;
   font-weight: 700;
-  font-size: 0.76rem;
+  font-size: 0.95rem;
   color: #0f172a;
 }
 

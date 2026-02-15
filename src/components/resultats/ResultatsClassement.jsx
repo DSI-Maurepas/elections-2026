@@ -89,8 +89,12 @@ const ResultatsClassement = ({ electionState }) => {
   // --- RENDU DES CARTES INDIVIDUELLES ---
   const classementContent = (
     <>
-      {/* Candidats qualifiés */}
-      <div style={{ marginBottom: 16 }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',  // Réduit de 300px à 250px
+        gap: 16,
+        marginBottom: 24
+      }}>
         {top2OrQualifies.map((candidat, index) => {
           const rank = classement.findIndex(c => c.id === candidat.id) + 1;
           const color = COLORS[(rank - 1) % COLORS.length];
@@ -110,111 +114,91 @@ const ResultatsClassement = ({ electionState }) => {
               key={`${candidat.id}-${rank}`}
               style={{
                 background: '#fff',
-                border: `2px solid ${color}`,
-                borderLeft: `6px solid ${color}`,
-                borderRadius: 10,
-                padding: '12px 16px',
-                marginBottom: 10,
+                borderRadius: 12,
+                border: `3px solid ${color}`,
+                padding: 16,
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)'
+              }}
+            >
+              {/* Badge au-dessus du nom */}
+              <div style={{
+                background: isQualifie ? '#10b981' : '#ef4444',
+                color: '#fff',
+                padding: '4px 10px',
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                textAlign: 'center',
+                marginBottom: 12
+              }}>
+                {isQualifie ? badgeText : "⛔ ÉLIMINÉ"}
+              </div>
+
+              {/* Rang et Nom */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+                <div style={{
+                  fontSize: 32,
+                  fontWeight: 900,
+                  color,
+                  lineHeight: 1,
+                  minWidth: 40
+                }}>
+                  {rank}
+                </div>
+                <div style={{ flex: 1, paddingTop: 4 }}>
+                  <div style={{
+                    fontSize: 18,
+                    fontWeight: 800,
+                    color: '#1e293b',
+                    lineHeight: 1.3
+                  }}>
+                    {candidat.name}
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 16,
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
-                transition: 'all 0.2s'
-              }}
-            >
-              {/* Rang */}
-              <div style={{
-                fontSize: 24,
-                fontWeight: 900,
-                color: color,
-                minWidth: 35,
-                textAlign: 'center'
+                marginTop: 12
               }}>
-                {rank}
-              </div>
-
-              {/* Nom + Badge */}
-              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
-                  fontSize: 16,
-                  fontWeight: 800,
-                  color: '#1e293b',
-                  marginBottom: 6
+                  fontSize: 24,
+                  fontWeight: 900,
+                  color: '#1e293b'
                 }}>
-                  {candidat.name}
+                  {candidat.totalVoix.toLocaleString('fr-FR')}
                 </div>
-                <div>
-                  {isQualifie ? (
-                    <span style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: '#059669',
-                      background: '#d1fae5',
-                      padding: '3px 10px',
-                      borderRadius: 6,
-                      display: 'inline-block'
-                    }}>
-                      {badgeText}
-                    </span>
-                  ) : (
-                    <span style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: '#dc2626',
-                      background: '#fee2e2',
-                      padding: '3px 10px',
-                      borderRadius: 6,
-                      display: 'inline-block'
-                    }}>
-                      ⛔ LISTE ÉLIMINÉ
-                    </span>
-                  )}
+                <div style={{
+                  fontSize: 24,
+                  fontWeight: 900,
+                  color
+                }}>
+                  {candidat.pct.toFixed(2)}%
                 </div>
               </div>
 
-              {/* Stats + Barre */}
-              <div style={{ 
-                minWidth: 180,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 6
-              }}>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'baseline', 
-                  justifyContent: 'flex-end',
-                  gap: 8
-                }}>
-                  <span style={{ 
-                    fontSize: 18, 
-                    fontWeight: 800, 
-                    color: '#1e293b' 
-                  }}>
-                    {candidat.totalVoix.toLocaleString('fr-FR')}
-                  </span>
-                  <span style={{ 
-                    fontSize: 16, 
-                    fontWeight: 700, 
-                    color: color 
-                  }}>
-                    {candidat.pct.toFixed(2)}%
-                  </span>
-                </div>
+              {/* Barre de progression seulement si qualifié */}
+              {isQualifie && (
                 <div style={{
+                  marginTop: 12,
+                  background: '#e5e7eb',
+                  borderRadius: 999,
                   height: 8,
-                  background: '#f1f5f9',
-                  borderRadius: 4,
                   overflow: 'hidden'
                 }}>
                   <div style={{
-                    height: '100%',
                     width: `${candidat.pct}%`,
+                    height: '100%',
                     background: color,
-                    borderRadius: 4,
-                    transition: 'width 0.5s ease'
+                    borderRadius: 999,
+                    transition: 'width 0.3s ease'
                   }} />
                 </div>
-              </div>
+              )}
             </div>
           );
         })}
@@ -223,7 +207,7 @@ const ResultatsClassement = ({ electionState }) => {
       {others.length > 0 && (
         <div style={{ marginTop: 24 }}>
           <div style={{
-            fontSize: 14,
+            fontSize: 16,
             fontWeight: 700,
             color: '#64748b',
             marginBottom: 12,
@@ -231,101 +215,97 @@ const ResultatsClassement = ({ electionState }) => {
           }}>
             {isTour1 ? 'Autres candidats' : 'Autres listes'}
           </div>
-          {others.map((candidat) => {
-            const rank = classement.findIndex(c => c.id === candidat.id) + 1;
-            const color = COLORS[(rank - 1) % COLORS.length];
-            return (
-              <div 
-                key={`${candidat.id}-${rank}`} 
-                style={{
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderLeft: `4px solid ${color}`,
-                  borderRadius: 8,
-                  padding: '10px 14px',
-                  marginBottom: 8,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12
-                }}
-              >
-                {/* Rang */}
-                <div style={{
-                  fontSize: 16,
-                  fontWeight: 800,
-                  color: color,
-                  minWidth: 28,
-                  textAlign: 'center'
-                }}>
-                  {rank}
-                </div>
-
-                {/* Nom */}
-                <div style={{ 
-                  flex: 1, 
-                  fontSize: 14, 
-                  fontWeight: 700,
-                  color: '#475569',
-                  minWidth: 0
-                }}>
-                  {candidat.name}
-                </div>
-
-                {/* Badge ÉLIMINÉ (T1 seulement) */}
-                {isTour1 && (
-                  <span style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: '#dc2626',
-                    background: '#fee2e2',
-                    padding: '2px 8px',
-                    borderRadius: 4
-                  }}>
-                    ⛔ ÉLIMINÉ
-                  </span>
-                )}
-
-                {/* Stats */}
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'baseline', 
-                  gap: 6,
-                  minWidth: 120
-                }}>
-                  <span style={{ 
-                    fontSize: 14, 
-                    fontWeight: 700, 
-                    color: '#1e293b' 
-                  }}>
-                    {candidat.totalVoix.toLocaleString('fr-FR')}
-                  </span>
-                  <span style={{ 
-                    fontSize: 13, 
-                    fontWeight: 600, 
-                    color: '#64748b' 
-                  }}>
-                    {candidat.pct.toFixed(2)}%
-                  </span>
-                </div>
-
-                {/* Barre de progression */}
-                <div style={{
-                  width: 80,
-                  height: 6,
-                  background: '#e2e8f0',
-                  borderRadius: 3,
-                  overflow: 'hidden'
-                }}>
+          
+          <div style={{
+            display: 'grid',
+            gap: 12
+          }}>
+            {others.map((candidat) => {
+              const rank = classement.findIndex(c => c.id === candidat.id) + 1;
+              const color = COLORS[(rank - 1) % COLORS.length];
+              return (
+                <div
+                  key={`${candidat.id}-${rank}`}
+                  style={{
+                    background: '#fff',
+                    borderRadius: 10,
+                    border: '2px solid #e5e7eb',
+                    borderLeft: `4px solid ${color}`,
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    position: 'relative'
+                  }}
+                >
+                  {/* Rang */}
                   <div style={{
-                    height: '100%',
-                    width: `${candidat.pct}%`,
-                    background: color,
-                    borderRadius: 3
-                  }} />
+                    fontSize: 20,
+                    fontWeight: 900,
+                    color,
+                    minWidth: 30
+                  }}>
+                    {rank}
+                  </div>
+
+                  {/* Nom */}
+                  <div style={{
+                    flex: '1 1 150px',
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: '#1e293b'
+                  }}>
+                    {candidat.name}
+                  </div>
+
+                  {/* Stats */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    flex: '0 0 auto'
+                  }}>
+                    <div style={{
+                      fontSize: 16,
+                      fontWeight: 800,
+                      color: '#64748b'
+                    }}>
+                      {candidat.totalVoix.toLocaleString('fr-FR')}
+                    </div>
+                    <div style={{
+                      fontSize: 16,
+                      fontWeight: 800,
+                      color
+                    }}>
+                      {candidat.pct.toFixed(2)}%
+                    </div>
+                  </div>
+
+                  {/* Badge ÉLIMINÉ à la place de la barre de progression */}
+                  {isTour1 && (
+                    <div style={{
+                      flex: '1 1 100%',
+                      marginTop: 8,
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: 6,
+                      padding: '6px 12px',
+                      textAlign: 'center'
+                    }}>
+                      <span style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: '#dc2626'
+                      }}>
+                        ⛔ LISTE ÉLIMINÉE
+                      </span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
     </>
@@ -337,12 +317,12 @@ const ResultatsClassement = ({ electionState }) => {
   // Configuration dynamique des couleurs selon le tour
   const headerStyle = isTour1
     ? {
-        background: 'linear-gradient(135deg, #addbbd 20%, #6aa05d 100%)', // Vert Émeraude (T1)
+        background: 'linear-gradient(135deg, #2e8c71 20%, #6cb29e 100%)', // Vert Émeraude (T1)
         color: '#fff',
         iconColor: '#d1fae5'
       }
     : {
-        background: 'linear-gradient(135deg, #297cdb 0%, #84bdff 60%)', // Bleu Royal (T2)
+        background: 'linear-gradient(135deg, #0055a4 30%, #297cdb 100%)', // Bleu Royal (T2)
         color: '#fff',
         iconColor: '#dbeafe'
       };
@@ -353,70 +333,84 @@ const ResultatsClassement = ({ electionState }) => {
         <div
           className="resultats-card classement-officiel"
           style={{
-            background: '#fff',
-            borderRadius: 12,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-            border: '2px solid #e5e7eb',
-            borderTop: `4px solid ${isTour1 ? '#10b981' : '#3b82f6'}`,
-            padding: 0,
+            background: '#fff',  // Fond blanc au lieu du gradient
+            color: '#1e293b',
+            borderRadius: 16,
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+            padding: 0,  // Pas de padding pour que le header prenne toute la largeur
+            border: `2px solid ${isTour1 ? '#10b981' : '#3b82f6'}`,
             marginBottom: 24,
             overflow: 'hidden'
           }}
         >
-          {/* Header compact - Une seule ligne avec titre + stats */}
+          {/* En-tête avec gradient et stats */}
           <div style={{ 
-            padding: '16px 20px',
-            borderBottom: '2px solid #f3f4f6',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 16
+            background: headerStyle.background,
+            color: headerStyle.color,
+            padding: 20,
+            marginBottom: 20 
           }}>
-            {/* Titre */}
             <div style={{ 
-              fontSize: 18, 
+              fontSize: 20, 
               fontWeight: 800, 
-              color: '#1e293b',
+              marginBottom: 16, 
               display: 'flex', 
               alignItems: 'center', 
               gap: 8 
             }}>
-              <span style={{ fontSize: 20 }}>📈</span>
-              <span>Classement officiel — Tour {tourActuel}</span>
+              <span>🏆</span> Classement officiel <br /> Tour {tourActuel}
             </div>
 
-            {/* Stats inline compactes */}
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 24,
-              fontSize: 14,
-              color: '#64748b'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>🗳️</span>
-                <span style={{ fontWeight: 700, color: '#1e293b' }}>
-                  {totalExprimes.toLocaleString('fr-FR')}
-                </span>
-                <span>exprimés</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+              
+              {/* Statistique 1 : Exprimés */}
+              <div style={{
+                background: 'rgba(6, 98, 72, 0.6)',
+                backdropFilter: 'blur(8px)',
+                borderRadius: 12,
+                padding: '12px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                border: '2px solid rgba(255, 255, 255, 0.8)'
+              }}>
+                <div style={{ fontSize: 24 }}>🗳️</div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>
+                    {totalExprimes.toLocaleString('fr-FR')}
+                  </span>
+                  <span style={{ fontSize: 17, fontWeight: 500, opacity: 1 }}>
+                    Suffrages exprimés
+                  </span>
+                </div>
               </div>
-              <div style={{ 
-                width: 1, 
-                height: 20, 
-                background: '#e5e7eb' 
-              }} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>✨</span>
-                <span style={{ fontWeight: 700, color: '#1e293b' }}>
-                  {top2OrQualifies.length}
-                </span>
-                <span>{isTour1 ? 'qualifiées' : 'élue'}</span>
+
+              {/* Statistique 2 : Qualifiés */}
+              <div style={{
+                background: 'rgba(6, 98, 72, 0.6)',
+                backdropFilter: 'blur(8px)',
+                borderRadius: 12,
+                padding: '12px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                border: '2px solid rgba(255, 255, 255, 0.8)'
+              }}>
+                <div style={{ fontSize: 24 }}>✨</div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>
+                    {top2OrQualifies.length}
+                  </span>
+                  <span style={{ fontSize: 17, fontWeight: 500, opacity: 1 }}>
+                    {top2OrQualifies.length === 1 ? 'Liste qualifiée' : 'Listes qualifiées'}
+                  </span>
+                </div>
               </div>
+
             </div>
           </div>
 
-          {/* Corps - Classement */}
+          {/* Contenu des cartes */}
           <div style={{ padding: 20 }}>
             {classementContent}
           </div>

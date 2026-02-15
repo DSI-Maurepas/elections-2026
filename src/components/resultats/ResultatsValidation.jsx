@@ -8,8 +8,18 @@ const ResultatsValidation = ({ electionState}) => {
   );
 
   useEffect(() => {
+    // Chargement initial
     loadBureaux();
     loadResultats();
+    
+    // Polling automatique toutes les 3 secondes pour mise à jour en temps réel
+    const interval = setInterval(() => {
+      loadBureaux();
+      loadResultats();
+    }, 3000);
+    
+    // Nettoyage de l'interval au démontage du composant
+    return () => clearInterval(interval);
   }, [loadBureaux, loadResultats]);
 
   const validation = useMemo(() => {

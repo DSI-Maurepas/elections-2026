@@ -716,7 +716,7 @@ export default function App() {
           onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 80, marginBottom: 20 }}>✅</div>
-            <h2 style={{ margin: '0 0 20px 0', fontSize: 32, fontWeight: 800 }}>
+            <h2 style={{ margin: '0 0 20px 0', color: 'white', fontSize: 32, fontWeight: 800 }}>
               Déverrouillage T1
             </h2>
             <p style={{ fontSize: 20, lineHeight: 1.6, opacity: 0.95 }}>
@@ -757,7 +757,7 @@ export default function App() {
           onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 80, marginBottom: 20 }}>✅</div>
-            <h2 style={{ margin: '0 0 20px 0', fontSize: 32, fontWeight: 800 }}>
+            <h2 style={{ margin: '0 0 20px 0', color: 'white', fontSize: 32, fontWeight: 800 }}>
               Déverrouillage T2
             </h2>
             <p style={{ fontSize: 20, lineHeight: 1.6, opacity: 0.95 }}>
@@ -798,7 +798,7 @@ export default function App() {
           onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 80, marginBottom: 20 }}>✅</div>
-            <h2 style={{ margin: '0 0 20px 0', fontSize: 32, fontWeight: 800 }}>
+            <h2 style={{ margin: '0 0 20px 0', color: 'white', fontSize: 32, fontWeight: 800 }}>
               Tour 1 actif
             </h2>
             <p style={{ fontSize: 20, lineHeight: 1.6, opacity: 0.95 }}>
@@ -839,7 +839,7 @@ export default function App() {
           onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 80, marginBottom: 20 }}>✅</div>
-            <h2 style={{ margin: '0 0 20px 0', fontSize: 32, fontWeight: 800 }}>
+            <h2 style={{ margin: '0 0 20px 0', color: 'white', fontSize: 32, fontWeight: 800 }}>
               Tour 2 actif
             </h2>
             <p style={{ fontSize: 20, lineHeight: 1.6, opacity: 0.95 }}>

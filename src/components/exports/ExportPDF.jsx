@@ -3,15 +3,14 @@ import exportService from '../../services/exportService';
 import uiService from '../../services/uiService';
 import auditService from '../../services/auditService';
 
-const ExportPDF = ({ electionState}) => {
+const ExportPDF = ({ electionState }) => {
+
+  const tourActuel = electionState?.tourActuel || 1;
+
   const handleExport = async (type) => {
     try {
-      await exportService.exportPDF(type, electionState?.tourActuel || 1);
+      await exportService.exportPDF(type, tourActuel);
 
-      // ✅ AUCUN message de succès volontairement
-      // Le téléchargement / ouverture du PDF fait foi
-
-      // Audit NON bloquant (si disponible)
       if (typeof auditService?.logExport === 'function') {
         try {
           await auditService.logExport(type, 'PDF');
@@ -20,7 +19,6 @@ const ExportPDF = ({ electionState}) => {
         }
       }
     } catch (error) {
-      // ❌ Message UNIQUEMENT en cas d'erreur
       uiService.toast('error', `Erreur : ${error.message}`);
     }
   };
@@ -30,16 +28,31 @@ const ExportPDF = ({ electionState}) => {
       <h3>📄 Exports PDF</h3>
 
       <div className="export-buttons">
-        <button onClick={() => handleExport('participation')}>
+        <button
+          className={`export-btn ${tourActuel === 1 ? 't1' : 't2'}`}
+          onClick={() => handleExport('participation')}
+        >
           📋 PV Participation
         </button>
-        <button onClick={() => handleExport('resultats')}>
+
+        <button
+          className={`export-btn ${tourActuel === 1 ? 't1' : 't2'}`}
+          onClick={() => handleExport('resultats')}
+        >
           🗳️ PV Résultats
         </button>
-        <button onClick={() => handleExport('statistiques')}>
+
+        <button
+          className={`export-btn ${tourActuel === 1 ? 't1' : 't2'}`}
+          onClick={() => handleExport('statistiques')}
+        >
           📊 Statistiques
         </button>
-        <button onClick={() => handleExport('sieges')}>
+
+        <button
+          className={`export-btn ${tourActuel === 1 ? 't1' : 't2'}`}
+          onClick={() => handleExport('sieges')}
+        >
           🪑 Répartition sièges
         </button>
       </div>

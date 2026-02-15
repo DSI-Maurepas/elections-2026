@@ -1,5 +1,5 @@
 // src/components/resultats/ResultatsSaisieBureau.jsx
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import googleSheetsService from '../../services/googleSheetsService';
 import auditService from '../../services/auditService';
 import { getAuthState, isBV } from '../../services/authService';
@@ -26,7 +26,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
   const tourActuel = electionState?.tourActuel === 2 ? 2 : 1;
   const resultatsSheet = tourActuel === 2 ? 'Resultats_T2' : 'Resultats_T1';
 
-  const { data: bureaux } = useGoogleSheets('Bureaux');
+  const { data: bureaux, load: loadBureaux } = useGoogleSheets('Bureaux');
   const { data: candidats } = useGoogleSheets('Candidats');
   const { data: resultats, load: reloadResultats, loading: loadingResultats } = useGoogleSheets(resultatsSheet);
 
@@ -58,17 +58,38 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
   }, [forcedBureauId]);
 
   // Charger le statut de validation admin depuis Config (pour TOUS les profils)
+  // + Polling automatique toutes les 3 secondes pour mise à jour en temps réel (silencieux)
   useEffect(() => {
-    (async () => {
+    let prevValidated = null;
+
+    // Fonction de chargement du statut admin
+    const loadAdminStatus = async () => {
       try {
         const config = await googleSheetsService.getConfig();
         const key = tourActuel === 1 ? 'VALIDATION_ADMIN_T1' : 'VALIDATION_ADMIN_T2';
         const validated = config[key] === 'TRUE' || config[key] === true;
-        setAdminValidated(validated);
+        
+        // Ne mettre à jour que si la valeur a changé (évite re-renders inutiles)
+        if (prevValidated !== validated) {
+          setAdminValidated(validated);
+          prevValidated = validated;
+        }
       } catch (e) {
         console.error('Erreur chargement validation admin:', e);
       }
-    })();
+    };
+
+    // Chargement initial
+    loadAdminStatus();
+
+    // Polling automatique toutes les 3 secondes
+    // UNIQUEMENT le statut admin global (critique pour bloquer les profils BV)
+    const interval = setInterval(() => {
+      loadAdminStatus();
+    }, 3000);
+
+    // Nettoyage de l'interval au démontage du composant
+    return () => clearInterval(interval);
   }, [tourActuel]);
 
   const bureauOptions = useMemo(() => {
@@ -497,11 +518,11 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
             maxWidth: 500,
             width: '100%',
             padding: 32,
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
             textAlign: 'center'
           }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: 24, fontWeight: 800 }}>
+            <h2 style={{ margin: '0 0 16px 0', color: 'white', fontSize: 24, fontWeight: 800 }}>
               Confirmation de validation
             </h2>
             <p style={{ fontSize: 16, lineHeight: 1.6, marginBottom: 24, opacity: 0.95 }}>
@@ -575,7 +596,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
             animation: 'fadeIn 0.3s ease-in'
           }}>
             <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: 28, fontWeight: 800 }}>
+            <h2 style={{ margin: '0 0 16px 0', color : 'white', fontSize: 28, fontWeight: 800 }}>
               Saisie validée !
             </h2>
             <p style={{ fontSize: 18, lineHeight: 1.6, opacity: 0.95 }}>
@@ -613,7 +634,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
             textAlign: 'center'
           }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🔐</div>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: 24, fontWeight: 800 }}>
+            <h2 style={{ margin: '0 0 16px 0', color : 'white', fontSize: 24, fontWeight: 800 }}>
               Validation globale - Administrateur
             </h2>
             <p style={{ fontSize: 16, lineHeight: 1.6, marginBottom: 16, opacity: 0.95 }}>
@@ -697,7 +718,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
             animation: 'fadeIn 0.3s ease-in'
           }}>
             <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: 28, fontWeight: 800 }}>
+            <h2 style={{ margin: '0 0 16px 0', color : 'white', fontSize: 28, fontWeight: 800 }}>
               Validation administrative effectuée !
             </h2>
             <p style={{ fontSize: 18, lineHeight: 1.6, opacity: 0.95 }}>
@@ -733,7 +754,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
             textAlign: 'center'
           }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🔓</div>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: 24, fontWeight: 800 }}>
+            <h2 style={{ margin: '0 0 16px 0', color : 'white', fontSize: 24, fontWeight: 800 }}>
               Déverrouillage administratif
             </h2>
             <p style={{ fontSize: 16, lineHeight: 1.6, marginBottom: 16, opacity: 0.95 }}>
@@ -817,7 +838,7 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
             animation: 'fadeIn 0.3s ease-in'
           }}>
             <div style={{ fontSize: 64, marginBottom: 16 }}>🔓</div>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: 28, fontWeight: 800 }}>
+            <h2 style={{ margin: '0 0 16px 0', color : 'white', fontSize: 28, fontWeight: 800 }}>
               Déverrouillage effectué !
             </h2>
             <p style={{ fontSize: 18, lineHeight: 1.6, opacity: 0.95 }}>
@@ -950,6 +971,45 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
           background: #fff;
         }
 
+        /* Scroll horizontal des tuiles BV en responsive */
+        .bureaux-grid-container {
+          display: grid;
+          grid-template-columns: repeat(13, 1fr);
+          gap: 8px;
+          padding-top: 30px;
+          padding-bottom: 40px;
+        }
+
+        @media (max-width: 900px) {
+          .bureaux-grid-container {
+            display: flex;
+            overflow-x: auto;           /* Scroll dans le conteneur */
+            overflow-y: visible;
+            -webkit-overflow-scrolling: touch;
+            scroll-snap-type: x mandatory;
+            gap: 12px;
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-top: 30px;
+            padding-bottom: 40px;
+            /* CRITIQUE : Limiter la largeur à la page pour que le scroll soit dans le conteneur */
+            max-width: 100%;            /* Ne dépasse JAMAIS la page */
+            width: 100%;                /* Prend toute la largeur disponible */
+          }
+          
+          .bureaux-grid-container > div {
+            flex: 0 0 110px !important; /* !important écrase style inline */
+            min-width: 110px !important; /* !important écrase style inline */
+            width: 110px !important; /* !important écrase style inline */
+            min-height: 110px !important; /* !important écrase style inline */
+            height: auto !important; /* Permet flex content mais min 110px */
+            max-width: 110px !important; /* Empêche agrandissement */
+            scroll-snap-align: start;
+            padding: 12px 8px !important; /* Padding équilibré vertical/horizontal */
+            justify-content: center !important; /* Centre le contenu verticalement */
+          }
+        }
+
       `}</style>
 
       {loading ? (
@@ -1022,14 +1082,9 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
                 <span>État de validation des bureaux de vote - Tour {tourActuel}</span>
               </div>
               
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(13, 1fr)', // FORCE 13 colonnes sur une ligne
-                gap: 8,
-                overflowX: 'auto',
-                paddingTop: 30,  // Espace pour que la tuile qui monte de 20px ne soit pas coupée
-                paddingBottom: 40 // Espace pour l'emoji doigt sous la tuile sélectionnée
-              }}>
+              <div 
+                className="bureaux-grid-container"
+              >
                 {bureauxStatuses.map((bureau) => {
                   // Couleur selon l'état et le tour
                   let bgColor, textColor, icon;

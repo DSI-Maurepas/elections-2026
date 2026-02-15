@@ -156,14 +156,14 @@ const SiegesCommunautaire = ({ electionState }) => {
 .sieges-scroll th,
 .sieges-scroll td { display: table-cell !important; }
 
-/* Le tableau doit dépasser la largeur mobile pour activer le scroll */
+/* Le tableau doit s'adapter à la largeur disponible */
 .sieges-scroll table {
   border-collapse: separate;
   border-spacing: 0;
-  display: inline-table !important;
-  table-layout: auto;
-  min-width: 980px;
-  width: 980px;
+  display: table !important;
+  table-layout: fixed;
+  width: 100%;
+  max-width: 100%;
 }
 
 .sieges-scroll thead th {
@@ -174,26 +174,42 @@ const SiegesCommunautaire = ({ electionState }) => {
   background: #1e3c72;
   color: #fff;
   white-space: nowrap;
+  padding: 12px 16px;
+}
+
+.sieges-scroll tbody td {
+  padding: 10px 16px;
+  border-bottom: 1px solid #e0e0e0;
 }
 
 /* Largeurs minimales des colonnes pour éviter les chevauchements */
 .sieges-scroll th:nth-child(1),
-.sieges-scroll td:nth-child(1) { min-width: 140px; }
+.sieges-scroll td:nth-child(1) { 
+  width: 18%; 
+  min-width: 140px; 
+  white-space: normal !important;  /* Permet retour à ligne */
+  word-wrap: break-word;
+  line-height: 1.3;
+}
+.sieges-scroll td:nth-child(1) {
+  font-size: 13px;  /* Police réduite pour les noms de listes */
+  padding: 8px 12px;
+}
 .sieges-scroll th:nth-child(2),
-.sieges-scroll td:nth-child(2) { min-width: 110px; }
+.sieges-scroll td:nth-child(2) { width: 12%; min-width: 90px; text-align: right; }
 .sieges-scroll th:nth-child(3),
-.sieges-scroll td:nth-child(3) { min-width: 80px; }
+.sieges-scroll td:nth-child(3) { width: 8%; min-width: 70px; text-align: right; }
 .sieges-scroll th:nth-child(4),
-.sieges-scroll td:nth-child(4) { min-width: 80px; text-align: center; }
+.sieges-scroll td:nth-child(4) { width: 10%; min-width: 80px; text-align: center; }
 .sieges-scroll th:nth-child(5),
-.sieges-scroll td:nth-child(5) { min-width: 80px; text-align: center; }
+.sieges-scroll td:nth-child(5) { width: 10%; min-width: 80px; text-align: center; }
 .sieges-scroll th:nth-child(6),
-.sieges-scroll td:nth-child(6) { min-width: 160px; text-align: center; }
+.sieges-scroll td:nth-child(6) { width: 14%; min-width: 100px; text-align: center; }
 .sieges-scroll th:nth-child(7),
-.sieges-scroll td:nth-child(7) { min-width: 480px; }
+.sieges-scroll td:nth-child(7) { width: 28%; min-width: 180px; }
 
-.sieges-scroll td { white-space: nowrap; }
-.sieges-scroll td:nth-child(7) { white-space: normal; }
+.sieges-scroll td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sieges-scroll td:nth-child(7) { white-space: normal; overflow: visible; }
 
 /* 1ère colonne sticky */
 .sieges-scroll th:first-child,
@@ -213,6 +229,26 @@ const SiegesCommunautaire = ({ electionState }) => {
 }
 .sieges-scroll tbody tr:nth-child(even) td:first-child {
   background: #f3f3f3;
+}
+
+/* Responsive : scroll horizontal + 1ère colonne 35% plus large */
+@media (max-width: 900px) {
+  .sieges-scroll {
+    overflow-x: auto;
+  }
+  
+  .sieges-scroll table {
+    display: inline-table !important;
+    min-width: 800px;
+    width: 800px;
+  }
+  
+  /* 1ère colonne 35% plus large en responsive */
+  .sieges-scroll th:nth-child(1),
+  .sieges-scroll td:nth-child(1) { 
+    width: 24%; /* 18% + 35% de 18% ≈ 24% */
+    min-width: 190px; 
+  }
 }
 
       `}</style>

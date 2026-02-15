@@ -1031,8 +1031,8 @@
 .resultats-validation .validation-table-wrap {
   border-radius: 16px;
   overflow: hidden;
-  border: 1px solid rgba(15, 23, 42, 0.10);
-  box-shadow: 0 12px 24px rgba(2, 6, 23, 0.08);
+  border: 2px solid rgba(15, 23, 42, 0.10);
+  box-shadow: 0 12px 24px rgba(2, 6, 23, 0.4);
 }
 
 .resultats-validation .validation-table.modern {
@@ -2106,4 +2106,32 @@
   .rsb-bureau-selector {
     padding: 12px 16px 6px;
   }
+}
+
+/* === EXPORT BUTTONS - CHARTE TOUR === */
+
+.export-btn {
+  transition: all 0.25s ease;
+}
+
+/* Tour 1 - Vert foncé */
+.export-btn.t1 {
+  background: linear-gradient(135deg, #0f5132, #198754);
+  border: none;
+  color: #ffffff;
+}
+
+.export-btn.t1:hover {
+  background: linear-gradient(135deg, #0c3e26, #146c43);
+}
+
+/* Tour 2 - Bleu (charte actuelle) */
+.export-btn.t2 {
+  background: linear-gradient(135deg, #0d6efd, #0b5ed7);
+  border: none;
+  color: #ffffff;
+}
+
+.export-btn.t2:hover {
+  background: linear-gradient(135deg, #0a58ca, #084298);
 }
