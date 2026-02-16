@@ -27,6 +27,7 @@ const ConfigCandidats = React.lazy(() => import("./components/admin/ConfigCandid
 const AuditLog = React.lazy(() => import("./components/admin/AuditLog"));
 const ExportPDF = React.lazy(() => import("./components/exports/ExportPDF"));
 const ExportExcel = React.lazy(() => import("./components/exports/ExportExcel"));
+const Informations = React.lazy(() => import("./components/informations/Informations"));
 
 import { canAccessPage } from "./config/authConfig";
 
@@ -137,20 +138,26 @@ export default function App() {
 
   // --- Mapping page -> pageKey (utilisé pour la restriction d'accès) ---
   const pageKeyFor = (page) => {
-    switch (page) {
-      case "participation":
-        return "participation_saisie";
-      case "resultats":
-        return "resultats_saisie_bureau";
-      case "passage-t2":
-        return "passage_second_tour";
-      case "admin":
-        return "admin_bureaux";
-      case "dashboard":
-      default:
-        return "dashboard";
-    }
-  };
+  switch (page) {
+    case "participation":
+      return "participation_saisie";
+    case "resultats":
+      return "resultats_saisie_bureau";
+    case "passage-t2":
+      return "passage_second_tour";
+    case "sieges":
+      return "sieges";
+    case "exports":
+      return "exports";
+    case "informations":
+      return "informations";
+    case "admin":
+      return "admin_bureaux";
+    case "dashboard":
+    default:
+      return "dashboard";
+  }
+};
 
   const navigateSafe = (page) => {
     // Si pas d'accès applicatif (déconnexion), on ne navigue pas
@@ -180,7 +187,7 @@ export default function App() {
   }, [accessAuth]);
 
   // Bloque pages sensibles si non connecté OAuth
-  const authRequiredPages = new Set(["participation", "resultats", "passage-t2", "sieges", "exports", "admin"]);
+  const authRequiredPages = new Set(["participation", "resultats", "passage-t2", "sieges", "exports", "admin", "informations"]);
   useEffect(() => {
     if (!isAuthenticated && authRequiredPages.has(currentPage)) {
       setCurrentPage("dashboard");
@@ -327,6 +334,15 @@ export default function App() {
             )}
           </>
         );
+
+case "informations":
+  return (
+    <>
+      {renderAuthGate()}
+      {isAuthenticated && <Informations electionState={safeElectionState} />}
+    </>
+  );
+
       case "admin":
         return (
           <>

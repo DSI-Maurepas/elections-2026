@@ -237,13 +237,35 @@ async sleep(ms) {
       ...(options.headers || {}),
     };
 
-    const response = await fetch(url, { ...options, headers });
+    let response;
+    try {
+      response = await fetch(url, { ...options, headers });
+    } catch (fetchErr) {
+      // Retry erreurs réseau transitoires
+      if (retry < 3) {
+        const base = 400 * (2 ** retry);
+        const jitter = Math.floor(Math.random() * 200);
+        await this.sleep(base + jitter);
+        return this.makeRequest(endpoint, options, retry + 1);
+      }
+      throw fetchErr;
+    }
 
     // Retry quota 429
     if (response.status === 429 && retry < 3) {
       const retryAfter = response.headers.get('retry-after');
       const waitMs = retryAfter ? (parseInt(retryAfter, 10) * 1000) : (300 * (2 ** retry));
       await this.sleep(waitMs);
+      return this.makeRequest(endpoint, options, retry + 1);
+    }
+
+    // Retry erreurs transitoires Google (5xx)
+    // Objectif: réduire l'impact des indisponibilités temporaires (HTTP 500/502/503/504)
+    // Sans créer de rafale : backoff exponentiel + jitter léger, max 3 retries.
+    if ([500, 502, 503, 504].includes(response.status) && retry < 3) {
+      const base = 400 * (2 ** retry);
+      const jitter = Math.floor(Math.random() * 200);
+      await this.sleep(base + jitter);
       return this.makeRequest(endpoint, options, retry + 1);
     }
 
