@@ -1,17 +1,17 @@
 // src/services/authService.js
 // Service d'authentification OAuth 2.0 pour Google Sheets API
-// + Gestion d'accès applicatif (BV / Global / Admin) via code, stocké en localStorage (jour J)
+// + Gestion d'accès applicatif (BV / Global / Admin) via code
+// + SÉCURITÉ : Protection CSRF via paramètre 'state'
 
 import { GOOGLE_SHEETS, LOCAL_STORAGE_KEYS } from '../utils/constants';
 import { ACCESS_CONFIG, parseAccessCode } from '../config/authConfig.js';
 
 // --- Accès applicatif (BV / Global / Admin) ---
-// Stockage: localStorage (session persistante dans le navigateur).
 const ACCESS_STORAGE_KEY = 'elections_access_v1';
-
 // --- Auth Admin (mot de passe local) ---
-// Compat V3: l'espace Administration est déverrouillé via un mot de passe.
 const ADMIN_STORAGE_KEY = 'elections_admin_auth_v1';
+// --- Sécurité OAuth ---
+const OAUTH_STATE_KEY = 'oauth_state_pending';
 
 class AuthService {
   constructor() {
@@ -26,30 +26,74 @@ class AuthService {
    */
   async initialize() {
     return new Promise((resolve, reject) => {
+      // Évite de recharger le script si déjà présent
+      if (window.google?.accounts?.oauth2) {
+        this._initClient(resolve, reject);
+        return;
+      }
+
       const script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
-      script.onload = () => {
-        this.tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: this.clientId,
-          scope: this.scopes,
-          callback: (response) => {
-            if (response.error) {
-              reject(response);
-              return;
-            }
-            this.handleAuthResponse(response);
-            resolve(response);
-          },
-        });
-        resolve();
-      };
-      script.onerror = reject;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => this._initClient(resolve, reject);
+      script.onerror = (e) => reject(new Error("Erreur de chargement du script Google GSI"));
       document.head.appendChild(script);
     });
   }
 
   /**
-   * Déclenche le flux d'authentification
+   * Configuration interne du client une fois le script chargé
+   */
+  _initClient(resolve, reject) {
+    try {
+      this.tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: this.clientId,
+        scope: this.scopes,
+        // Callback par défaut (sera surchargé dans signIn pour capturer le state)
+        callback: (response) => {
+          if (response.error) {
+            reject(response);
+            return;
+          }
+          // Note: Ici on ne peut pas valider le state facilement car il est lié
+          // à l'appel requestAccessToken. La validation se fait dans signIn().
+          this.handleAuthResponse(response);
+          resolve(response);
+        },
+      });
+      resolve();
+    } catch (err) {
+      reject(err);
+    }
+  }
+
+  /**
+   * Génère un état aléatoire unique pour la sécurité CSRF
+   */
+  _generateState() {
+    const array = new Uint32Array(4);
+    window.crypto.getRandomValues(array);
+    const state = Array.from(array, dec => dec.toString(16).padStart(8, '0')).join('');
+    // Stockage en session (expire à la fermeture de l'onglet)
+    sessionStorage.setItem(OAUTH_STATE_KEY, state);
+    return state;
+  }
+
+  /**
+   * Valide que l'état reçu correspond à l'état envoyé
+   */
+  _validateState(receivedState) {
+    const storedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+    // Nettoyage immédiat pour éviter la réutilisation (Replay Attack)
+    sessionStorage.removeItem(OAUTH_STATE_KEY); 
+    
+    if (!storedState || !receivedState) return false;
+    return storedState === receivedState;
+  }
+
+  /**
+   * Déclenche le flux d'authentification avec protection CSRF
    */
   async signIn() {
     if (!this.tokenClient) {
@@ -58,16 +102,35 @@ class AuthService {
 
     return new Promise((resolve, reject) => {
       try {
+        // 1. Génération du challenge de sécurité
+        const stateToken = this._generateState();
+
+        // 2. Surcharge du callback pour inclure la validation
         this.tokenClient.callback = (response) => {
           if (response.error) {
             reject(response);
             return;
           }
+
+          // 3. VÉRIFICATION DE SÉCURITÉ CRITIQUE
+          if (!this._validateState(response.state)) {
+            console.error("⛔ ALERTE SÉCURITÉ : Tentative de CSRF détectée ou état invalide.");
+            reject(new Error("Échec de l'authentification : Validation de sécurité (state) incorrecte."));
+            return;
+          }
+
           this.handleAuthResponse(response);
           resolve(response);
         };
 
-        this.tokenClient.requestAccessToken({ prompt: '' });
+        // 4. Envoi de la requête avec le paramètre state
+        // prompt: '' force la connexion silencieuse si possible, 
+        // ou 'select_account' pour forcer le choix
+        this.tokenClient.requestAccessToken({ 
+          prompt: '',
+          state: stateToken // <--- Ajout du paramètre d'état
+        });
+
       } catch (error) {
         reject(error);
       }
@@ -75,12 +138,12 @@ class AuthService {
   }
 
   /**
-   * Gère la réponse d'authentification
+   * Gère la réponse d'authentification (Succès)
    */
   handleAuthResponse(response) {
     this.accessToken = response.access_token;
 
-    // Stocker le token (attention: localStorage non sécurisé pour prod)
+    // Stocker le token
     localStorage.setItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN, response.access_token);
 
     // Stocker l'expiration
@@ -96,13 +159,20 @@ class AuthService {
     const token = this.accessToken || localStorage.getItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
 
     if (token && window.google?.accounts?.oauth2) {
-      google.accounts.oauth2.revoke(token);
+      try {
+        google.accounts.oauth2.revoke(token, () => {
+          console.log('Token révoqué');
+        });
+      } catch (e) {
+        console.warn('Erreur révocation', e);
+      }
     }
 
     this.accessToken = null;
     localStorage.removeItem(LOCAL_STORAGE_KEYS.AUTH_TOKEN);
     localStorage.removeItem('auth_token_expires_at');
     localStorage.removeItem(LOCAL_STORAGE_KEYS.USER_EMAIL);
+    sessionStorage.removeItem(OAUTH_STATE_KEY);
   }
 
   /**
@@ -139,7 +209,6 @@ class AuthService {
    */
   async refreshTokenIfNeeded() {
     const expiresAt = localStorage.getItem('auth_token_expires_at');
-
     if (!expiresAt) return;
 
     const now = Date.now();
@@ -147,6 +216,7 @@ class AuthService {
 
     // Rafraîchir si expire dans moins de 5 minutes
     if (timeUntilExpiry < 5 * 60 * 1000) {
+      console.log("Token proche expiration, rafraîchissement...");
       await this.signIn();
     }
   }
@@ -173,22 +243,14 @@ class AuthService {
     return userInfo;
   }
 
-  /**
-   * Récupère l'email de l'utilisateur
-   */
   getUserEmail() {
     return localStorage.getItem(LOCAL_STORAGE_KEYS.USER_EMAIL) || 'utilisateur@inconnu.com';
   }
 
   // =========================
-  // Auth Administration (mot de passe)
+  // Auth Administration (mot de passe local)
   // =========================
 
-  /**
-   * Connecte l'utilisateur à l'espace Administration via mot de passe.
-   * @param {string} password
-   * @returns {boolean} true si OK
-   */
   adminSignIn(password) {
     const ok = typeof password === 'string' && password === ACCESS_CONFIG.ADMIN_PASSWORD;
     if (ok) {
@@ -197,17 +259,10 @@ class AuthService {
     return ok;
   }
 
-  /**
-   * Déconnecte l'utilisateur de l'espace Administration.
-   */
   adminSignOut() {
     localStorage.removeItem(ADMIN_STORAGE_KEY);
   }
 
-  /**
-   * Indique si l'utilisateur est connecté à l'espace Administration.
-   * @returns {boolean}
-   */
   isAdminSignedIn() {
     try {
       const raw = localStorage.getItem(ADMIN_STORAGE_KEY);
@@ -224,11 +279,6 @@ class AuthService {
 // Accès applicatif (BV / GLOBAL / ADMIN)
 // =========================
 
-/**
- * Login applicatif par code (BVx / Global / Admin).
- * @param {string} code
- * @returns {{role:'BV'|'GLOBAL'|'ADMIN', bureauId?:number}|null}
- */
 export function loginWithCode(code) {
   const auth = parseAccessCode(code);
   if (!auth) return null;
@@ -236,10 +286,6 @@ export function loginWithCode(code) {
   return auth;
 }
 
-/**
- * Etat d'accès applicatif courant.
- * @returns {{role:'BV'|'GLOBAL'|'ADMIN', bureauId?:number}|null}
- */
 export function getAuthState() {
   try {
     const raw = localStorage.getItem(ACCESS_STORAGE_KEY);
@@ -254,7 +300,6 @@ export function getAuthState() {
 
 export function logoutAccess() {
   localStorage.removeItem(ACCESS_STORAGE_KEY);
-  // on ne touche pas au token OAuth ici (décision volontaire)
 }
 
 export function clearAllSessions() {
@@ -267,17 +312,11 @@ export function clearAllSessions() {
   }
 }
 
-// Helpers attendus par les composants (Participation / Résultats)
-export function isBV(auth) {
-  return auth?.role === 'BV';
-}
-export function isGlobal(auth) {
-  return auth?.role === 'GLOBAL';
-}
-export function isAdmin(auth) {
-  return auth?.role === 'ADMIN';
-}
+// Helpers
+export function isBV(auth) { return auth?.role === 'BV'; }
+export function isGlobal(auth) { return auth?.role === 'GLOBAL'; }
+export function isAdmin(auth) { return auth?.role === 'ADMIN'; }
 
-// Instance singleton OAuth (compat V3)
+// Singleton
 const authService = new AuthService();
 export default authService;

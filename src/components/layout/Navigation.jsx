@@ -56,6 +56,7 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
       case "passage-t2": return "passage_second_tour";
       case "sieges": return "sieges";
       case "exports": return "exports";
+      case "informations": return "informations";
       case "admin": return "admin_bureaux";
       case "dashboard":
       default:
@@ -70,6 +71,7 @@ const Navigation = ({ currentPage, onNavigate, isAuthenticated, onSignIn, onSign
     { id: "passage-t2", label: "➡️ Passage T2", page: "passage-t2", disabled: !(tourActuel === 1 && !tour1Verrouille), disabledHint: "Disponible uniquement en Tour 1 (non verrouillé)." },
     { id: "sieges", label: "🪑 Sièges", page: "sieges" },
     { id: "exports", label: "📄 Exports", page: "exports" },
+    { id: "informations", label: "ℹ️ Informations", page: "informations" },
     { id: "admin", label: "⚙️ Administration", page: "admin" },
   ];
 

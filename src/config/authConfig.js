@@ -16,6 +16,9 @@ export const ACCESS_CONFIG = Object.freeze({
 
   // Mot de passe Administration (compat V3)
   ADMIN_PASSWORD: "ADMIN@2026",
+
+  // Accès Informations (lecture seule)
+  INFO_PASSWORD: "Info@2026",
 });
 
 /**
@@ -26,7 +29,7 @@ export const ACCESS_CONFIG = Object.freeze({
  * - mot de passe admin (ADMIN)
  *
  * @param {string} code
- * @returns {{role:'BV'|'GLOBAL'|'ADMIN', bureauId?:number}|null}
+ * @returns {{role:'BV'|'GLOBAL'|'ADMIN'|'INFO', bureauId?:number}|null}
  */
 export function parseAccessCode(code) {
   if (typeof code !== "string") return null;
@@ -42,6 +45,13 @@ export function parseAccessCode(code) {
   if (trimmed === ACCESS_CONFIG.ADMIN_PASSWORD) {
     return { role: "ADMIN" };
   }
+
+
+
+// Informations (lecture seule)
+if (trimmed === ACCESS_CONFIG.INFO_PASSWORD) {
+  return { role: "INFO" };
+}
 
   // BVx@Elections2026 : parsing SANS regex (plus robuste, zéro ambiguïté)
   const upper = trimmed.toUpperCase();
@@ -79,6 +89,12 @@ export function canAccessPage(auth, pageKey) {
     return true;
   }
 
+  if (role === "INFO") {
+    // Lecture seule : uniquement la page Informations + dashboard
+    const allowed = new Set(["dashboard", "informations"]);
+    return allowed.has(pageKey);
+  }
+
   if (role === "BV") {
     const allowed = new Set(["participation_saisie", "resultats_saisie_bureau", "participation", "resultats"]);
     return allowed.has(pageKey);
@@ -95,4 +111,8 @@ export function isGlobal(auth) {
 }
 export function isAdmin(auth) {
   return auth?.role === "ADMIN";
+}
+
+export function isInfo(auth) {
+  return auth?.role === "INFO";
 }
