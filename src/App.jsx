@@ -643,16 +643,19 @@ case "informations":
 
   return (
     <div className={`app-root theme-tour-${safeElectionState.tourActuel}`}>
-      <Navigation
-        currentPage={currentPage}
-        onNavigate={navigateSafe}
-        isAuthenticated={isAuthenticated}
-        onSignIn={handleSignIn}
-        onSignOut={handleSignOut}
-        electionState={safeElectionState}
-        accessAuth={accessAuth}
-        onAccessLogout={handleAccessLogout}
-      />
+      {/* Profil INFO : pas de navigation (une seule page = Informations) */}
+      {accessAuth?.role !== "INFO" && (
+        <Navigation
+          currentPage={currentPage}
+          onNavigate={navigateSafe}
+          isAuthenticated={isAuthenticated}
+          onSignIn={handleSignIn}
+          onSignOut={handleSignOut}
+          electionState={safeElectionState}
+          accessAuth={accessAuth}
+          onAccessLogout={handleAccessLogout}
+        />
+      )}
 
       <main className="app-main" role="main">
         <Suspense fallback={<div style={{ padding: 40, textAlign: 'center' }}>Chargement…</div>}>

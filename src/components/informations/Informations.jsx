@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useGoogleSheets } from "../../hooks/useGoogleSheets";
+import calculService from "../../services/calculService";
+import { ELECTION_CONFIG } from "../../utils/constants";
 import "./../../styles/components/informations.css";
 import InformationsEvolutionHoraire from "./InformationsEvolutionHoraire";
 
@@ -330,6 +332,76 @@ export default function Informations({ electionState }) {
     return {bureauLabel:match?.nom?`${match.id} — ${match.nom}`:(rid?`BV${rid}`:"—"),at:best};
   },[resultats,bureaux]);
 
+  // ── Calcul des sièges en mémoire (repli si Google Sheets vide) ──
+  // Même logique que SiegesMunicipal.jsx / SiegesCommunautaire.jsx :
+  // 1) Source prioritaire = onglets Seats_Municipal / Seats_Community
+  // 2) Repli = calculService depuis Résultats + Candidats
+
+  const TOTAL_SIEGES_MUNI = ELECTION_CONFIG?.SEATS_MUNICIPAL_TOTAL || 35;
+  const TOTAL_SIEGES_COMM = ELECTION_CONFIG?.SEATS_COMMUNITY_TOTAL || 6;
+
+  const siegesMunicipaux = useMemo(()=>{
+    // 1) Source prioritaire : onglet Google Sheets (filtré par tour)
+    const sheetRows=(Array.isArray(seatsMunicipal)?seatsMunicipal:[])
+      .filter(r=>Number(r?.tour)===tourVisu)
+      .filter(r=>(r?.nomListe||r?.listeId));
+    if(sheetRows.length>0){
+      // Recalcul depuis les données Sheets (comme fait SiegesMunicipal.jsx)
+      const listes=sheetRows.map(r=>({
+        listeId:r.listeId||'',nomListe:r.nomListe||r.listeId||'—',
+        voix:Number(r.voix)||0,pctVoix:Number(r.pctVoix)||0,eligible:!!r.eligible
+      }));
+      try{
+        return calculService.calculerSiegesMunicipauxDepuisListes(listes,TOTAL_SIEGES_MUNI);
+      }catch(e){console.warn('Erreur calcul sièges muni (sheets):',e);return [];}
+    }
+    // 2) Repli : consolider depuis Résultats + Candidats
+    const res=Array.isArray(resultats)?resultats:[];
+    const cand=Array.isArray(candidats)?candidats:[];
+    if(!res.length||!cand.length) return [];
+    const actifs=cand.filter(c=>tourVisu===1?!!c.actifT1:!!c.actifT2);
+    if(!actifs.length) return [];
+    const listes=actifs.map(c=>{
+      const id=c?.listeId||'';
+      const voix=res.reduce((s,r)=>{const vo=r?.voix||{};return s+(Number(vo[id])||0);},0);
+      return {listeId:id,nomListe:c?.nomListe||id,voix,eligible:true};
+    });
+    try{
+      return calculService.calculerSiegesMunicipauxDepuisListes(listes,TOTAL_SIEGES_MUNI);
+    }catch(e){console.warn('Erreur calcul sièges muni (repli):',e);return [];}
+  },[seatsMunicipal,resultats,candidats,tourVisu,TOTAL_SIEGES_MUNI]);
+
+  const siegesCommunautaires = useMemo(()=>{
+    // 1) Source prioritaire : onglet Google Sheets
+    const sheetRows=(Array.isArray(seatsCommunity)?seatsCommunity:[])
+      .filter(r=>(r?.nomListe||r?.listeId));
+    if(sheetRows.length>0){
+      const listes=sheetRows.map(r=>({
+        listeId:(r.listeId||'').toString().trim(),
+        nomListe:(r.nomListe||r.listeId||'—').toString().trim(),
+        voixMunicipal:Number(r.voixMunicipal??r.voix??0)||0,
+        eligible:!!r.eligible
+      }));
+      try{
+        return calculService.calculerSiegesCommunautairesDepuisListes(listes,TOTAL_SIEGES_COMM);
+      }catch(e){console.warn('Erreur calcul sièges comm (sheets):',e);return [];}
+    }
+    // 2) Repli : consolider depuis Résultats + Candidats
+    const res=Array.isArray(resultats)?resultats:[];
+    const cand=Array.isArray(candidats)?candidats:[];
+    if(!res.length||!cand.length) return [];
+    const actifs=cand.filter(c=>tourVisu===1?!!c.actifT1:!!c.actifT2);
+    if(!actifs.length) return [];
+    const listes=actifs.map(c=>{
+      const id=c?.listeId||'';
+      const voix=res.reduce((s,r)=>{const vo=r?.voix||{};return s+(Number(vo[id])||0);},0);
+      return {listeId:id,nomListe:c?.nomListe||id,voixMunicipal:voix,eligible:true};
+    });
+    try{
+      return calculService.calculerSiegesCommunautairesDepuisListes(listes,TOTAL_SIEGES_COMM);
+    }catch(e){console.warn('Erreur calcul sièges comm (repli):',e);return [];}
+  },[seatsCommunity,resultats,candidats,tourVisu,TOTAL_SIEGES_COMM]);
+
   const tourLabel  = tourVisu===2?"Tour 2":"Tour 1";
   const themeClass = tourVisu===2?"t2":"t1";
 
@@ -506,12 +578,9 @@ export default function Informations({ electionState }) {
             <article className="info-card info-card-sieges">
               <div className="card-title">🏛 Sièges Municipaux</div>
               {(()=>{
-                const tour=tourVisu;
-                const muniList=(Array.isArray(seatsMunicipal)?seatsMunicipal:[])
-                  .filter(r=>Number(r?.tour)===tour)
-                  .filter(r=>coerceInt(r?.siegesTotal)>0||coerceInt(r?.siegesMajorite)>0||coerceInt(r?.siegesProportionnels)>0)
-                  .sort((a,b)=>coerceInt(b?.siegesTotal)-coerceInt(a?.siegesTotal));
-                const totalMuni=muniList.reduce((s,r)=>s+coerceInt(r?.siegesTotal),0);
+                const muniList=(Array.isArray(siegesMunicipaux)?siegesMunicipaux:[])
+                  .filter(r=>(Number(r?.sieges)||0)>0||(Number(r?.siegesPrime)||0)>0||(Number(r?.siegesProportionnels)||0)>0);
+                const totalMuni=muniList.reduce((s,r)=>s+(Number(r?.sieges)||0),0);
                 if(!muniList.length) return <div className="empty">En attente du calcul des sièges.</div>;
                 return (
                   <>
@@ -521,12 +590,12 @@ export default function Informations({ electionState }) {
                     </div>
                     <div className="sieges-list">
                       {muniList.map((r,i)=>{
-                        const nom=r?.nomListe||r?.listeId||`Liste ${i+1}`;
-                        const maj=coerceInt(r?.siegesMajorite);
-                        const prop=coerceInt(r?.siegesProportionnels);
-                        const total=coerceInt(r?.siegesTotal);
+                        const nom=r?.nom||r?.nomListe||r?.listeId||`Liste ${i+1}`;
+                        const maj=Number(r?.siegesPrime)||0;
+                        const prop=Number(r?.siegesProportionnels)||0;
+                        const total=Number(r?.sieges)||0;
                         return (
-                          <div key={r?.listeId||i} className={`sieges-row${i===0?" sieges-row--first":""}`}>
+                          <div key={r?.listeId||r?.candidatId||i} className={`sieges-row${i===0?" sieges-row--first":""}`}>
                             <div className="sieges-row-name">{nom}</div>
                             <div className="sieges-row-detail">
                               <span className="sieges-badge sieges-badge--maj" title="Majorité">{maj}</span>
@@ -685,10 +754,9 @@ export default function Informations({ electionState }) {
             <article className="info-card info-card-sieges">
               <div className="card-title">🏘 Sièges Communautaires</div>
               {(()=>{
-                const commList=(Array.isArray(seatsCommunity)?seatsCommunity:[])
-                  .filter(r=>coerceInt(r?.siegesCommunautaires)>0)
-                  .sort((a,b)=>coerceInt(b?.siegesCommunautaires)-coerceInt(a?.siegesCommunautaires));
-                const totalComm=commList.reduce((s,r)=>s+coerceInt(r?.siegesCommunautaires),0);
+                const commList=(Array.isArray(siegesCommunautaires)?siegesCommunautaires:[])
+                  .filter(r=>(Number(r?.sieges)||0)>0);
+                const totalComm=commList.reduce((s,r)=>s+(Number(r?.sieges)||0),0);
                 if(!commList.length) return <div className="empty">En attente du calcul des sièges.</div>;
                 return (
                   <>
@@ -698,10 +766,10 @@ export default function Informations({ electionState }) {
                     </div>
                     <div className="sieges-list">
                       {commList.map((r,i)=>{
-                        const nom=r?.nomListe||r?.listeId||`Liste ${i+1}`;
-                        const sieges=coerceInt(r?.siegesCommunautaires);
+                        const nom=r?.nom||r?.nomListe||r?.listeId||`Liste ${i+1}`;
+                        const sieges=Number(r?.sieges)||0;
                         return (
-                          <div key={r?.listeId||i} className={`sieges-row${i===0?" sieges-row--first":""}`}>
+                          <div key={r?.listeId||r?.candidatId||i} className={`sieges-row${i===0?" sieges-row--first":""}`}>
                             <div className="sieges-row-name">{nom}</div>
                             <div className="sieges-row-detail">
                               <span className="sieges-badge sieges-badge--total">{sieges}</span>
