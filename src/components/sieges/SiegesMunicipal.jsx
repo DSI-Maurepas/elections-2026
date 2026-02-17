@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 import calculService from '../../services/calculService';
+import googleSheetsService from '../../services/googleSheetsService';
 import { useElectionState } from '../../hooks/useElectionState';
+import { SHEET_NAMES } from '../../utils/constants';
 
 const SiegesMunicipal = ({ electionState}) => {
   const { state } = useElectionState();
@@ -14,6 +16,7 @@ const SiegesMunicipal = ({ electionState}) => {
 
   const [sieges, setSieges] = useState([]);
   const [totalSieges, setTotalSieges] = useState(35);
+  const persistedRef = useRef(false);
 
   const seatsMunicipalTour = useMemo(() => {
     const tour = Number(state.tourActuel) || 1;
@@ -94,6 +97,33 @@ const SiegesMunicipal = ({ electionState}) => {
       });
     
     setSieges(recalcules);
+
+    // ── Persistance Google Sheets (Seats_Municipal) — une seule fois ──
+    if (recalcules.length > 0 && !persistedRef.current) {
+      persistedRef.current = true;
+      const tour = Number(state.tourActuel) || 1;
+      const rows = recalcules.map(r => [
+        tour,                                                       // A Tour
+        r.listeId || r.candidatId || '',                            // B ListeID
+        r.nom || r.nomListe || '',                                  // C NomListe
+        Number(r.voix) || 0,                                        // D Voix
+        (Number(r.pourcentage) || 0).toFixed(2),                    // E PctVoix
+        Number(r.siegesPrime) || 0,                                 // F SiegesMajorite
+        Number(r.siegesProportionnels) || 0,                        // G SiegesProportionnels
+        Number(r.sieges) || 0,                                      // H SiegesTotal
+        (Number(r.pourcentage) || 0) >= 5 ? 'TRUE' : 'FALSE'       // I Eligible
+      ]);
+      (async () => {
+        try {
+          await googleSheetsService.clearSheet(SHEET_NAMES.SEATS_MUNICIPAL);
+          const header = ['Tour', 'ListeID', 'NomListe', 'Voix', 'PctVoix', 'SiegesMajorite', 'SiegesProportionnels', 'SiegesTotal', 'Eligible'];
+          await googleSheetsService.appendRows(SHEET_NAMES.SEATS_MUNICIPAL, [header, ...rows]);
+          console.log('[SiegesMunicipal] Persistance Sheets OK:', rows.length, 'lignes');
+        } catch (e) {
+          console.warn('[SiegesMunicipal] Erreur persistance Sheets:', e);
+        }
+      })();
+    }
   }, [seatsMunicipalTour, resultats, candidats, totalSieges, state.tourActuel]);
 
   return (

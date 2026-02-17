@@ -488,12 +488,7 @@ export default function Informations({ electionState }) {
                         <div className="rank-sub">{fmtInt(l?.voix)} voix — {fmtPct(l?.pctVoix)}</div>
                         <div className="rank-bar-wrap"><div className="rank-bar" style={{width:`${Math.min(100,l?.pctVoix||0)}%`}}/></div>
                       </div>
-                      {(hasMuni||hasComm)&&(
-                        <div className="rank-seats">
-                          {hasMuni&&<div className="seat"><div className="seat-label">Mun.</div><div className="seat-value">{fmtInt(muni?.siegesTotal)}</div></div>}
-                          {hasComm&&<div className="seat"><div className="seat-label">Com.</div><div className="seat-value">{fmtInt(comm?.siegesTotal)}</div></div>}
-                        </div>
-                      )}
+                      {/* sièges municipaux T1 : non applicable — retiré */}
                     </div>
                   );
                 })
@@ -620,7 +615,7 @@ export default function Informations({ electionState }) {
                     {topListes.map((l,i)=>(
                       <div key={l.listeId||i} className={`qualif-card${i===0?" qualif-card--first":""}`}>
                         <div className="qualif-card-top">
-                          <span className="qualif-rank">{i===0?"🏆 ÉLU":ordinal(i)}</span>
+                          <span className="qualif-rank">{i===0?"🏆 ÉLUE":ordinal(i)}</span>
                           <span className="qualif-voix">{fmtInt(l.voix)} voix</span>
                         </div>
                         <div className="qualif-nom">{l.nomListe||l.listeId}</div>

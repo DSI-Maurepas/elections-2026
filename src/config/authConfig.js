@@ -90,8 +90,8 @@ export function canAccessPage(auth, pageKey) {
   }
 
   if (role === "INFO") {
-    // Lecture seule : uniquement la page Informations + dashboard
-    const allowed = new Set(["dashboard", "informations"]);
+    // Lecture seule : uniquement la page Informations + Participation INFO + dashboard
+    const allowed = new Set(["dashboard", "informations", "info_participation"]);
     return allowed.has(pageKey);
   }
 

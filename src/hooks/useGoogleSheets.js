@@ -71,6 +71,18 @@ export const useGoogleSheets = (sheetName) => {
     [sheetName, hasOAuthToken]
   );
 
+  // Réinitialiser le marqueur de chargement quand sheetName change
+  // (ex : passage T1→T2 dans la page Informations).
+  // Sans ce reset, hasLoadedOnceRef reste à true et l'auto-load ci-dessous
+  // ne se déclenche jamais pour le nouvel onglet → données stale.
+  const prevSheetRef = useRef(sheetName);
+  useEffect(() => {
+    if (prevSheetRef.current !== sheetName) {
+      hasLoadedOnceRef.current = false;
+      prevSheetRef.current = sheetName;
+    }
+  }, [sheetName]);
+
   // Auto-chargement au montage (et lors d'un changement de sheetName)
   // IMPORTANT : certaines vues consomment uniquement `data` sans appeler `load()`.
   // - En dev React 18, les effects peuvent être invoqués deux fois (StrictMode).

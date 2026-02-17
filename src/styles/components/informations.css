@@ -492,13 +492,48 @@
 
 /* ═══ RESPONSIVE ═══════════════════════════════════════════════════ */
 @media (max-width: 1200px) {
+  /* Page sort du breakout — layout normal */
   .info-page { position: static; left: auto; width: 100%; transform: none; padding: 12px; }
-  .info-header { flex-direction: column; }
-  .info-meta   { grid-template-columns: 1fr 1fr; }
-  .info-grid   { grid-template-columns: 1fr; grid-template-areas: "cola" "colb" "colc"; }
+
+  /* Header : colonne unique */
+  .info-header { flex-direction: column; align-items: stretch; gap: 14px; }
+
+  /* Tour switch : côte à côte, pleine largeur */
+  .info-tour-switch { flex-direction: row; width: 100%; }
+  .info-tour-btn    { flex: 1; }
+  .info-tour-hint   { width: 100%; text-align: center; }
+
+  /* Méta-cartes : 2 colonnes (2×2), pas de débordement */
+  .info-meta { 
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important; 
+    gap: 10px !important;
+    flex: none; 
+    width: 100%; 
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Titre sur une ligne — réduire la taille pour tenir */
+  .info-title-h1 { font-size: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Grille 3 colonnes → colonne unique empilée */
+  .info-grid { grid-template-columns: 1fr; grid-template-areas: "cola" "colb" "colc"; }
+
+  /* KPIs participation : 2 × 2 */
+  .kpis { grid-template-columns: 1fr 1fr !important; }
+
+  /* Évolution horaire : scroll horizontal pour ne pas écraser les valeurs */
+  .info-card-evolution { overflow-x: auto; }
+  .info-evo-chart-area { min-width: 700px; }
+
+  /* Légende évolution : alignée à droite */
+  .info-evolution-head { flex-wrap: wrap; }
+  .info-evolution-sub  { text-align: right; margin-left: auto; }
 }
+
 @media (max-width: 640px) {
-  .info-meta  { grid-template-columns: 1fr; }
-  .bv-tile    { width: 56px; }
-  .rank-seats { grid-template-columns: 1fr; }
+  .info-title-h1 { font-size: 20px; }
+  .info-meta     { grid-template-columns: 1fr 1fr; }
+  .bv-tile       { width: 56px; }
 }
