@@ -503,19 +503,17 @@
   .info-tour-btn    { flex: 1; }
   .info-tour-hint   { width: 100%; text-align: center; }
 
-  /* Méta-cartes : 2 colonnes (2×2), pas de débordement */
+  /* Méta-cartes : 2 colonnes, max-width pour éviter débordement */
   .info-meta { 
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important; 
-    gap: 10px !important;
+    grid-template-columns: 1fr 1fr; 
     flex: none; 
     width: 100%; 
     max-width: 100%;
     box-sizing: border-box;
   }
 
-  /* Titre sur une ligne — réduire la taille pour tenir */
-  .info-title-h1 { font-size: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Titre sur une ligne — réduire la taille si besoin */
+  .info-title-h1 { font-size: 26px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* Grille 3 colonnes → colonne unique empilée */
   .info-grid { grid-template-columns: 1fr; grid-template-areas: "cola" "colb" "colc"; }
