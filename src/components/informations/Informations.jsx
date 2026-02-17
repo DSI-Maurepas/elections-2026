@@ -338,22 +338,31 @@ export default function Informations({ electionState }) {
   // 2) Repli = calculService depuis Résultats + Candidats
 
   const TOTAL_SIEGES_MUNI = ELECTION_CONFIG?.SEATS_MUNICIPAL_TOTAL || 35;
-  const TOTAL_SIEGES_COMM = ELECTION_CONFIG?.SEATS_COMMUNITY_TOTAL || 6;
+  const TOTAL_SIEGES_COMM = ELECTION_CONFIG?.SEATS_COMMUNITY_TOTAL || 7;
 
   const siegesMunicipaux = useMemo(()=>{
-    // 1) Source prioritaire : onglet Google Sheets (filtré par tour)
+    // 1) Source prioritaire : onglet Google Sheets (données DÉJÀ calculées)
     const sheetRows=(Array.isArray(seatsMunicipal)?seatsMunicipal:[])
       .filter(r=>Number(r?.tour)===tourVisu)
       .filter(r=>(r?.nomListe||r?.listeId));
     if(sheetRows.length>0){
-      // Recalcul depuis les données Sheets (comme fait SiegesMunicipal.jsx)
-      const listes=sheetRows.map(r=>({
-        listeId:r.listeId||'',nomListe:r.nomListe||r.listeId||'—',
-        voix:Number(r.voix)||0,pctVoix:Number(r.pctVoix)||0,eligible:!!r.eligible
+      // Dédupliquer par listeId (protection contre doublons en Sheets)
+      const seen=new Set();
+      const deduped=[];
+      for(const r of sheetRows){
+        const id=(r.listeId||'').toString().trim();
+        if(id&&!seen.has(id)){seen.add(id);deduped.push(r);}
+      }
+      return deduped.map(r=>({
+        listeId:r.listeId||'',
+        nom:r.nomListe||r.listeId||'—',
+        nomListe:r.nomListe||r.listeId||'—',
+        voix:Number(r.voix)||0,
+        pourcentage:Number(r.pctVoix)||0,
+        siegesPrime:Number(r.siegesMajorite)||0,
+        siegesProportionnels:Number(r.siegesProportionnels)||0,
+        sieges:Number(r.siegesTotal)||0,
       }));
-      try{
-        return calculService.calculerSiegesMunicipauxDepuisListes(listes,TOTAL_SIEGES_MUNI);
-      }catch(e){console.warn('Erreur calcul sièges muni (sheets):',e);return [];}
     }
     // 2) Repli : consolider depuis Résultats + Candidats
     const res=Array.isArray(resultats)?resultats:[];
@@ -372,19 +381,27 @@ export default function Informations({ electionState }) {
   },[seatsMunicipal,resultats,candidats,tourVisu,TOTAL_SIEGES_MUNI]);
 
   const siegesCommunautaires = useMemo(()=>{
-    // 1) Source prioritaire : onglet Google Sheets
+    // 1) Source prioritaire : onglet Google Sheets (données DÉJÀ calculées)
     const sheetRows=(Array.isArray(seatsCommunity)?seatsCommunity:[])
       .filter(r=>(r?.nomListe||r?.listeId));
     if(sheetRows.length>0){
-      const listes=sheetRows.map(r=>({
+      // Dédupliquer par listeId (protection contre doublons en Sheets)
+      const seen=new Set();
+      const deduped=[];
+      for(const r of sheetRows){
+        const id=(r.listeId||'').toString().trim();
+        if(id&&!seen.has(id)){seen.add(id);deduped.push(r);}
+      }
+      return deduped.map(r=>({
         listeId:(r.listeId||'').toString().trim(),
+        nom:(r.nomListe||r.listeId||'—').toString().trim(),
         nomListe:(r.nomListe||r.listeId||'—').toString().trim(),
-        voixMunicipal:Number(r.voixMunicipal??r.voix??0)||0,
-        eligible:!!r.eligible
+        voix:Number(r.voixMunicipal??r.voix??0)||0,
+        pourcentage:Number(r.pctMunicipal??r.pctVoix??0)||0,
+        sieges:Number(r.siegesCommunautaires??r.siegesTotal??0)||0,
+        siegesPrime:0,
+        siegesProportionnels:Number(r.siegesCommunautaires??r.siegesTotal??0)||0,
       }));
-      try{
-        return calculService.calculerSiegesCommunautairesDepuisListes(listes,TOTAL_SIEGES_COMM);
-      }catch(e){console.warn('Erreur calcul sièges comm (sheets):',e);return [];}
     }
     // 2) Repli : consolider depuis Résultats + Candidats
     const res=Array.isArray(resultats)?resultats:[];
@@ -729,7 +746,7 @@ export default function Informations({ electionState }) {
                     Résultats du scrutin du 2nd tour — Maurepas.
                   </div>
                   <div className="qualif-summary-tile" style={{background:"#0b3b86"}}>
-                    <div className="qualif-summary-nb" style={{fontSize:34}}>🏆</div>
+                    <div className="qualif-summary-nb" style={{fontSize:34}}>🏆🏛️</div>
                     <div className="qualif-summary-label">{topListes[0]?.nomListe||"—"}</div>
                     <div className="qualif-summary-sub">{fmtInt(topListes[0]?.voix)} voix — {fmtPct(topListes[0]?.pctVoix)}</div>
                   </div>
@@ -755,7 +772,7 @@ export default function Informations({ electionState }) {
               <div className="card-title">🏘 Sièges Communautaires</div>
               {(()=>{
                 const commList=(Array.isArray(siegesCommunautaires)?siegesCommunautaires:[])
-                  .filter(r=>(Number(r?.sieges)||0)>0);
+                  .filter(r=>(Number(r?.sieges)||0)>0||(Number(r?.siegesPrime)||0)>0||(Number(r?.siegesProportionnels)||0)>0);
                 const totalComm=commList.reduce((s,r)=>s+(Number(r?.sieges)||0),0);
                 if(!commList.length) return <div className="empty">En attente du calcul des sièges.</div>;
                 return (
@@ -767,16 +784,25 @@ export default function Informations({ electionState }) {
                     <div className="sieges-list">
                       {commList.map((r,i)=>{
                         const nom=r?.nom||r?.nomListe||r?.listeId||`Liste ${i+1}`;
-                        const sieges=Number(r?.sieges)||0;
+                        const maj=Number(r?.siegesPrime)||0;
+                        const prop=Number(r?.siegesProportionnels)||0;
+                        const total=Number(r?.sieges)||0;
                         return (
                           <div key={r?.listeId||r?.candidatId||i} className={`sieges-row${i===0?" sieges-row--first":""}`}>
                             <div className="sieges-row-name">{nom}</div>
                             <div className="sieges-row-detail">
-                              <span className="sieges-badge sieges-badge--total">{sieges}</span>
+                              <span className="sieges-badge sieges-badge--maj" title="Majorité">{maj}</span>
+                              <span className="sieges-badge sieges-badge--prop" title="Proportionnelle">{prop}</span>
+                              <span className="sieges-badge sieges-badge--total">{total}</span>
                             </div>
                           </div>
                         );
                       })}
+                    </div>
+                    <div className="sieges-legende">
+                      <span className="sieges-legende-item"><span className="sieges-badge sieges-badge--maj sieges-badge--sm">M</span> Majorité</span>
+                      <span className="sieges-legende-item"><span className="sieges-badge sieges-badge--prop sieges-badge--sm">P</span> Proportionnelle</span>
+                      <span className="sieges-legende-item"><span className="sieges-badge sieges-badge--total sieges-badge--sm">T</span> Total</span>
                     </div>
                   </>
                 );

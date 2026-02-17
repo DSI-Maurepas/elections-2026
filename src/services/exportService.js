@@ -1522,7 +1522,7 @@ const data = (auditData || [])
 
     // 3) Calcul métier (on ne fait confiance qu'aux voix + %)
     const totalMunicipal = Number(ELECTION_CONFIG.SEATS_MUNICIPAL_TOTAL) || 35;
-    const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 6;
+    const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 7;
 
     const municipal = calculService
       .calculerSiegesMunicipauxDepuisListes(
@@ -1653,7 +1653,7 @@ const data = (auditData || [])
   generateSiegesHTML(municipal = [], communautaire = [], tour = 1) {
     const t = Number(tour) || 1;
     const totalMunicipal = Number(ELECTION_CONFIG.SEATS_MUNICIPAL_TOTAL) || 35;
-    const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 6;
+    const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 7;
 
     const renderTable = (rows, title, total) => {
       const safe = Array.isArray(rows) ? rows : [];

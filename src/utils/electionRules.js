@@ -168,7 +168,7 @@ function calculerSiegesProportionnels(listes, toutesListes, siegesAAttribuer) {
  * @param {Number} seuilPct - Seuil en pourcentage (ex: 5.0)
  * @returns {Array} Répartition des sièges communautaires
  */
-export function calculerSiegesCommunautaire(resultats, totalSieges = 6, seuilPct = 5.0) {
+export function calculerSiegesCommunautaire(resultats, totalSieges = 7, seuilPct = 5.0) {
   // Calculer le total des suffrages exprimés
   const totalExprimes = resultats.reduce((sum, r) => sum + r.voix, 0);
   

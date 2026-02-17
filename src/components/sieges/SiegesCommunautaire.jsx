@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGoogleSheets } from '../../hooks/useGoogleSheets';
 import calculService from '../../services/calculService';
+import googleSheetsService from '../../services/googleSheetsService';
 import { useElectionState } from '../../hooks/useElectionState';
+import { ELECTION_CONFIG, SHEET_NAMES } from '../../utils/constants';
 
 const SiegesCommunautaire = ({ electionState }) => {
   const { state } = useElectionState();
@@ -17,20 +19,20 @@ const SiegesCommunautaire = ({ electionState }) => {
   const { data: resultats } = useGoogleSheets(state.tourActuel === 1 ? 'Resultats_T1' : 'Resultats_T2');
 
   const [sieges, setSieges] = useState([]);
-  const [totalSieges, setTotalSieges] = useState(6); // Valeur par défaut
+  const [totalSieges, setTotalSieges] = useState(ELECTION_CONFIG?.SEATS_COMMUNITY_TOTAL || 7);
+  const persistedRef = useRef(false);
 
-  // Lecture du nombre de sièges CC depuis Config
+  // Lecture du nombre de sièges CC depuis Config (prioritaire sur la constante)
   useEffect(() => {
     if (!config || config.length === 0) return;
     
-    // Les données sont retournées sous forme de tableau : row[0] = Clé, row[1] = Valeur, row[2] = Description
     const seatsCCRow = config.find(row => {
       const cle = row[0] || row['0'] || '';
       return cle === 'SEATS_COMMUNITY_TOTAL';
     });
     
     if (seatsCCRow) {
-      const rawValue = seatsCCRow[1] || seatsCCRow['1'] || 6;
+      const rawValue = seatsCCRow[1] || seatsCCRow['1'] || ELECTION_CONFIG?.SEATS_COMMUNITY_TOTAL || 7;
       const cleanedValue = String(rawValue).trim();
       const value = Number(cleanedValue);
       
@@ -118,6 +120,31 @@ const SiegesCommunautaire = ({ electionState }) => {
       });
     
     setSieges(normalized);
+
+    // ── Persistance Google Sheets (Seats_Community) — une seule fois ──
+    if (normalized.length > 0 && !persistedRef.current) {
+      persistedRef.current = true;
+      const totalVoixAll = normalized.reduce((s, r) => s + (Number(r?.voix) || 0), 0);
+      const rows = normalized.map(r => [
+        r.listeId || '',                                            // A ListeID
+        r.nom || r.nomListe || '',                                  // B NomListe
+        Number(r.voix) || 0,                                        // C VoixMunicipal
+        totalVoixAll > 0 ? ((Number(r.voix) || 0) / totalVoixAll * 100).toFixed(2) : '0', // D PctMunicipal
+        Number(r.sieges) || 0,                                      // E SiegesCommunautaires
+        (Number(r.pourcentage) || 0) >= 5 ? 'TRUE' : 'FALSE'       // F Eligible
+      ]);
+      (async () => {
+        try {
+          await googleSheetsService.clearSheet(SHEET_NAMES.SEATS_COMMUNITY);
+          // Écriture header + données
+          const header = ['ListeID', 'NomListe', 'VoixMunicipal', 'PctMunicipal', 'SiegesCommunautaires', 'Eligible'];
+          await googleSheetsService.appendRows(SHEET_NAMES.SEATS_COMMUNITY, [header, ...rows]);
+          console.log('[SiegesCommunautaire] Persistance Sheets OK:', rows.length, 'lignes');
+        } catch (e) {
+          console.warn('[SiegesCommunautaire] Erreur persistance Sheets:', e);
+        }
+      })();
+    }
   }, [seatsCommunityRows, resultats, candidats, totalSieges, state.tourActuel]);
 
   return (
@@ -315,7 +342,8 @@ const SiegesCommunautaire = ({ electionState }) => {
                 </td>
               </tr>
             ) : (
-              sieges.map(s => (
+              <>
+                {sieges.map(s => (
                 <tr key={s.candidatId || s.listeId}>
                   <td><strong>{s.nom || s.nomListe}</strong></td>
                   <td>{Number(s.voix || 0).toLocaleString('fr-FR')}</td>
@@ -325,7 +353,18 @@ const SiegesCommunautaire = ({ electionState }) => {
                   <td className="sieges-number">{Number(s.sieges || 0)}</td>
                   <td>{s.methode}</td>
                 </tr>
-              ))
+                ))}
+                {/* Ligne de total — Prime + Proportionnelle + Total sièges */}
+                <tr style={{ fontWeight: 'bold', background: '#f5f5f5', borderTop: '2px solid #333' }}>
+                  <td><strong>TOTAL</strong></td>
+                  <td>{sieges.reduce((sum, s) => sum + (Number(s.voix) || 0), 0).toLocaleString('fr-FR')}</td>
+                  <td>100%</td>
+                  <td className="sieges-number">{sieges.reduce((sum, s) => sum + (Number(s.siegesPrime) || 0), 0)}</td>
+                  <td className="sieges-number">{sieges.reduce((sum, s) => sum + (Number(s.siegesProportionnels) || 0), 0)}</td>
+                  <td className="sieges-number">{sieges.reduce((sum, s) => sum + (Number(s.sieges) || 0), 0)}</td>
+                  <td>—</td>
+                </tr>
+              </>
             )}
           </tbody>
         </table>

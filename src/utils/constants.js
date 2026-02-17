@@ -143,7 +143,7 @@ export const ELECTION_CONFIG = {
   VOTING_HOURS_START: '08:00',
   VOTING_HOURS_END: '20:00',
   SEATS_MUNICIPAL_TOTAL: 35, // >20k habitants
-  SEATS_COMMUNITY_TOTAL: 6, // SQY - À configurer
+  SEATS_COMMUNITY_TOTAL: 7, // SQY - Conseil Communautaire
   SEATS_THRESHOLD_PCT: 5.0,
 };
 

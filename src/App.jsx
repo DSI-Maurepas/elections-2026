@@ -28,6 +28,7 @@ const AuditLog = React.lazy(() => import("./components/admin/AuditLog"));
 const ExportPDF = React.lazy(() => import("./components/exports/ExportPDF"));
 const ExportExcel = React.lazy(() => import("./components/exports/ExportExcel"));
 const Informations = React.lazy(() => import("./components/informations/Informations"));
+const InformationsParticipation = React.lazy(() => import("./components/informations/InformationsParticipation"));
 
 import { canAccessPage } from "./config/authConfig";
 
@@ -151,6 +152,8 @@ export default function App() {
       return "exports";
     case "informations":
       return "informations";
+    case "info-participation":
+      return "info_participation";
     case "admin":
       return "admin_bureaux";
     case "dashboard":
@@ -176,21 +179,28 @@ export default function App() {
     setCurrentPage(page);
   };
 
-  // Au changement d'accès: BV => participation, Global/Admin => dashboard
+  // Au changement d'accès: BV => participation, INFO => informations, Global/Admin => dashboard
   useEffect(() => {
     if (!accessAuth) return;
     if (accessAuth.role === "BV") {
       setCurrentPage("participation");
+    } else if (accessAuth.role === "INFO") {
+      setCurrentPage("informations");
     } else {
       setCurrentPage("dashboard");
     }
   }, [accessAuth]);
 
-  // Bloque pages sensibles si non connecté OAuth
-  const authRequiredPages = new Set(["participation", "resultats", "passage-t2", "sieges", "exports", "admin", "informations"]);
+  // Bloque pages sensibles si non connecté OAuth (sauf profil INFO qui reste sur informations)
+  const authRequiredPages = new Set(["participation", "resultats", "passage-t2", "sieges", "exports", "admin", "informations", "info-participation"]);
   useEffect(() => {
     if (!isAuthenticated && authRequiredPages.has(currentPage)) {
-      setCurrentPage("dashboard");
+      if (accessAuth?.role === "INFO") {
+        // INFO reste sur informations (la page gère l'état non connecté)
+        setCurrentPage("informations");
+      } else {
+        setCurrentPage("dashboard");
+      }
     }
   }, [isAuthenticated, currentPage]);
 
@@ -340,6 +350,14 @@ case "informations":
     <>
       {renderAuthGate()}
       {isAuthenticated && <Informations electionState={safeElectionState} />}
+    </>
+  );
+
+case "info-participation":
+  return (
+    <>
+      {renderAuthGate()}
+      {isAuthenticated && <InformationsParticipation electionState={safeElectionState} />}
     </>
   );
 
@@ -643,8 +661,75 @@ case "informations":
 
   return (
     <div className={`app-root theme-tour-${safeElectionState.tourActuel}`}>
-      {/* Profil INFO : pas de navigation (une seule page = Informations) */}
-      {accessAuth?.role !== "INFO" && (
+      {/* Profil INFO : barre minimale (connexion + tour) avec boutons Informations / Participation */}
+      {accessAuth?.role === "INFO" ? (
+        <nav className="main-navigation" aria-label="Barre INFO" style={{ paddingBottom: 8 }}>
+          <div className="nav-header">
+            <h1 className="app-title" aria-label="Élections Municipales 2026">
+              <span className="app-title-main">Élections Municipales</span>
+              <span className="app-title-year">2026</span>
+            </h1>
+            <div className="nav-header-right">
+              <div className="election-status" role="status" aria-live="polite">
+                <span className={["tour-pill", "tour-pill--t1", safeElectionState.tourActuel === 1 ? "is-active" : "is-inactive"].join(" ")}>1er Tour</span>
+                <span className={["tour-pill", "tour-pill--t2", safeElectionState.tourActuel === 2 ? "is-active" : "is-inactive"].join(" ")}>2nd Tour</span>
+              </div>
+            </div>
+          </div>
+          {/* ── Boutons navigation INFO : Informations + Participation + actions ── */}
+          <div className="info-profile-nav-row">
+            <div className="info-profile-nav-btns">
+              <span className={`tour-indicator-badge tour-indicator-badge--${safeElectionState.tourActuel === 2 ? 2 : 1}`}>
+                <span className="tour-indicator-icon">{safeElectionState.tourActuel === 2 ? "🔵" : "🟢"}</span>
+                <span className="tour-indicator-text">{safeElectionState.tourActuel === 2 ? "TOUR 2" : "TOUR 1"}</span>
+              </span>
+              <button
+                className={`nav-item nav-item--informations${currentPage === "informations" ? " active" : ""}`}
+                type="button"
+                onClick={() => navigateSafe("informations")}
+              >
+                ℹ️ Informations
+              </button>
+              <button
+                className={`nav-item nav-item--info-participation${currentPage === "info-participation" ? " active" : ""}`}
+                type="button"
+                onClick={() => navigateSafe("info-participation")}
+              >
+                📊 Participation
+              </button>
+            </div>
+            <div className="info-profile-nav-actions">
+              {!isAuthenticated ? (
+                <button className="nav-item nav-item--google-auth" type="button" onClick={handleSignIn}>Connexion Google</button>
+              ) : (
+                <button className="nav-item nav-item--google-auth" type="button" onClick={handleSignOut}>Déconnexion Google</button>
+              )}
+              <button className="nav-item nav-item--quit" type="button" onClick={handleAccessLogout}>Quitter la Session</button>
+            </div>
+          </div>
+          {/* Bande d'informations bleue */}
+          <div className="nav-info">
+            <div className="top-info-row" role="region" aria-label="Informations scrutin et connexion">
+              <div className="info-block">
+                <div className="info-label">1er tour</div>
+                <div className="info-value">Dimanche 15 mars 2026</div>
+              </div>
+              <div className="info-block">
+                <div className="info-label">2nd tour</div>
+                <div className="info-value">Dimanche 22 mars 2026</div>
+              </div>
+              <div className="info-block info-block--auth">
+                <div className="info-label">Base de données</div>
+                <div className="info-value">{isAuthenticated ? "Connecté 🟢" : "Non connecté 🔴"}</div>
+              </div>
+              <div className="info-block info-block--access">
+                <div className="info-label">Session</div>
+                <div className="info-value">INFO</div>
+              </div>
+            </div>
+          </div>
+        </nav>
+      ) : (
         <Navigation
           currentPage={currentPage}
           onNavigate={navigateSafe}

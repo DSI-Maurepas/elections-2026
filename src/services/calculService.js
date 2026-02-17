@@ -403,7 +403,7 @@ export const calculService = {
   
   // Alias rétrocompatible : certains composants/appels historiques utilisent ce nom.
   // Délègue à la version "DepuisListes" (prime majoritaire + plus forte moyenne).
-  calculerSiegesCommunautaires(listes, totalSieges = 6) {
+  calculerSiegesCommunautaires(listes, totalSieges = 7) {
     return this.calculerSiegesCommunautairesDepuisListes(listes, totalSieges);
   },
 formatPercent(value, decimals = 2) {
