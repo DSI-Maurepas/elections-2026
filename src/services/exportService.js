@@ -4,14 +4,6 @@
 
 import { generateFilename, formatDateTime, formatNumber, formatPercent } from '../utils/formatters';
 import { ELECTION_CONFIG, SHEET_NAMES } from '../utils/constants';
-
-// Helper : formater date en français (ex: "15 mars 2026")
-const formatDateFR = (isoDate) => {
-  if (!isoDate) return '';
-  const d = new Date(isoDate);
-  if (isNaN(d.getTime())) return isoDate;
-  return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).format(d);
-};
 import auditService from './auditService';
 // ⚡ Import dynamique : xlsx (~2 Mo) n'est chargé qu'au premier export
 let _XLSX = null;
@@ -31,22 +23,11 @@ class ExportService {
   async exportExcel(type, tour = 1) {
     try {
       switch (type) {
-        case 'participation': {
+        case 'participation':
           const sheetNameParticipation = tour === 1 ? SHEET_NAMES.PARTICIPATION_T1 : SHEET_NAMES.PARTICIPATION_T2;
-          const sheetNameResultats     = tour === 1 ? SHEET_NAMES.RESULTATS_T1      : SHEET_NAMES.RESULTATS_T2;
           const participation = await googleSheetsService.getData(sheetNameParticipation);
-          const resultats     = await googleSheetsService.getData(sheetNameResultats).catch(() => []);
-          // Enrichir chaque ligne participation avec nuls/blancs/exprimes depuis resultats
-          const enrichedParticipation = (Array.isArray(participation) ? participation : []).map((p) => {
-            const bid = String(p?.bureauId ?? p?.BureauID ?? '').trim();
-            const r = (Array.isArray(resultats) ? resultats : []).find(
-              (row) => String(row?.bureauId ?? row?.BureauID ?? '').trim() === bid
-            );
-            return r ? { ...p, nuls: r.nuls ?? r.Nuls ?? 0, blancs: r.blancs ?? r.Blancs ?? 0, exprimes: r.exprimes ?? r.Exprimes ?? 0 } : p;
-          });
-          await this.exportParticipationCSV(enrichedParticipation, tour);
+          await this.exportParticipationCSV(participation, tour);
           break;
-        }
         
         case 'resultats':
           const sheetNameResultats = tour === 1 ? SHEET_NAMES.RESULTATS_T1 : SHEET_NAMES.RESULTATS_T2;
@@ -103,19 +84,9 @@ case 'audit':
         await this.openPVForPrint(resultats, candidats, tour);
       } else if (type === 'participation') {
         const sheetNameParticipation = tour === 1 ? SHEET_NAMES.PARTICIPATION_T1 : SHEET_NAMES.PARTICIPATION_T2;
-        const sheetNameResultats     = tour === 1 ? SHEET_NAMES.RESULTATS_T1      : SHEET_NAMES.RESULTATS_T2;
         const participation = await googleSheetsService.getData(sheetNameParticipation);
-        const bureaux       = await googleSheetsService.getData(SHEET_NAMES.BUREAUX);
-        const resultats     = await googleSheetsService.getData(sheetNameResultats).catch(() => []);
-        // Enrichir participation avec nuls/blancs/exprimes
-        const enrichedParticipation = (Array.isArray(participation) ? participation : []).map((p) => {
-          const bid = String(p?.bureauId ?? p?.BureauID ?? '').trim();
-          const r = (Array.isArray(resultats) ? resultats : []).find(
-            (row) => String(row?.bureauId ?? row?.BureauID ?? '').trim() === bid
-          );
-          return r ? { ...p, nuls: r.nuls ?? r.Nuls ?? 0, blancs: r.blancs ?? r.Blancs ?? 0, exprimes: r.exprimes ?? r.Exprimes ?? 0 } : p;
-        });
-        await this.openParticipationForPrint(enrichedParticipation, bureaux, tour);
+        const bureaux = await googleSheetsService.getData(SHEET_NAMES.BUREAUX);
+        await this.openParticipationForPrint(participation, bureaux, tour);
       } else if (type === 'sieges') {
         const { municipal, communautaire } = await this.getSiegesCalcules(tour);
         await this.openSiegesForPrint(municipal, communautaire, tour);
@@ -247,24 +218,12 @@ case 'audit':
       // Taux en pourcentage, gardes-fous anti-NaN
       const tauxPct = inscrits > 0 ? (votants / inscrits) * 100 : 0;
 
-      const nuls     = getNumeric(p?.nuls   ?? p?.Nuls);
-      const blancs   = getNumeric(p?.blancs ?? p?.Blancs);
-      const exprimes = getNumeric(p?.exprimes ?? p?.Exprimes);
-      const tauxNuls     = inscrits > 0 ? (nuls     / inscrits) * 100 : 0;
-      const tauxBlancs   = inscrits > 0 ? (blancs   / inscrits) * 100 : 0;
-      const tauxExprimes = inscrits > 0 ? (exprimes / inscrits) * 100 : 0;
-
       return {
         'Bureau': bureau,
+        'Heure': heure,
         'Inscrits': inscrits,
         'Votants': votants,
-        'Taux participation (%)': Number(tauxPct.toFixed(2)),
-        'Nuls': nuls,
-        'Taux nuls (%)': Number(tauxNuls.toFixed(2)),
-        'Blancs': blancs,
-        'Taux blancs (%)': Number(tauxBlancs.toFixed(2)),
-        'Exprimés': exprimes,
-        'Taux exprimés (%)': Number(tauxExprimes.toFixed(2)),
+        'Taux (%)': Number(tauxPct.toFixed(2)),
         'Saisi par': p?.saisiPar || p?.SaisiPar || p?.user || '',
         'Timestamp': formatDateTime(p?.timestamp || p?.Timestamp || new Date().toISOString()),
       };
@@ -279,26 +238,13 @@ case 'audit':
    */
   async exportResultatsCSV(resultats, candidats, tour = 1) {
     const data = resultats.map(r => {
-      const inscrits  = Number(r.inscrits  ?? 0);
-      const votants   = Number(r.votants   ?? 0);
-      const blancs    = Number(r.blancs    ?? 0);
-      const nuls      = Number(r.nuls      ?? 0);
-      const exprimes  = Number(r.exprimes  ?? 0);
-      const procurations = Number(r.procurations ?? 0);
-
       const row = {
         'Bureau': r.bureauId,
-        'Inscrits': inscrits,
-        'Votants': votants,
-        'Taux participation (%)': inscrits > 0 ? Number(((votants / inscrits) * 100).toFixed(2)) : 0,
-        'Blancs': blancs,
-        'Taux blancs (%)': inscrits > 0 ? Number(((blancs / inscrits) * 100).toFixed(2)) : 0,
-        'Nuls': nuls,
-        'Taux nuls (%)': inscrits > 0 ? Number(((nuls / inscrits) * 100).toFixed(2)) : 0,
-        'Exprimés': exprimes,
-        'Taux exprimés (%)': inscrits > 0 ? Number(((exprimes / inscrits) * 100).toFixed(2)) : 0,
-        'Procurations': procurations,
-        'Taux procurations (%)': votants > 0 ? Number(((procurations / votants) * 100).toFixed(2)) : 0,
+        'Inscrits': r.inscrits,
+        'Votants': r.votants,
+        'Blancs': r.blancs,
+        'Nuls': r.nuls,
+        'Exprimés': r.exprimes
       };
 
       // Ajouter les voix par candidat
@@ -757,19 +703,9 @@ const data = (auditData || [])
         lastVotants = getVotants(p, '20h');
       }
 
+      row['Dernier état (heure)'] = lastHour;
       row['Dernier état (votants)'] = lastVotants;
-      row['Taux participation (%)'] = inscrits > 0 ? formatPercent(lastVotants / inscrits, 2) : formatPercent(0, 2);
-
-      const toN = (v) => { const n = Number(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
-      const nuls     = toN(p?.nuls     ?? p?.Nuls);
-      const blancs   = toN(p?.blancs   ?? p?.Blancs);
-      const exprimes = toN(p?.exprimes ?? p?.Exprimes);
-      row['Nuls']               = nuls;
-      row['Taux nuls (%)']      = inscrits > 0 ? formatPercent(nuls     / inscrits, 2) : formatPercent(0, 2);
-      row['Blancs']             = blancs;
-      row['Taux blancs (%)']    = inscrits > 0 ? formatPercent(blancs   / inscrits, 2) : formatPercent(0, 2);
-      row['Exprimés']           = exprimes;
-      row['Taux exprimés (%)']  = inscrits > 0 ? formatPercent(exprimes / inscrits, 2) : formatPercent(0, 2);
+      row['Taux dernier état'] = inscrits > 0 ? formatPercent(lastVotants / inscrits, 2) : formatPercent(0, 2);
 
       return row;
     });
@@ -906,7 +842,7 @@ const data = (auditData || [])
     <h1>RÉPUBLIQUE FRANÇAISE</h1>
     <h2>Procès-Verbal - Élections Municipales</h2>
     <h3>${ELECTION_CONFIG.COMMUNE_NAME} (${ELECTION_CONFIG.COMMUNE_CODE})</h3>
-    <h3>${tour === 1 ? '1er Tour' : '2nd Tour'} - ${formatDateFR(ELECTION_CONFIG[tour === 1 ? 'ELECTION_DATE_T1' : 'ELECTION_DATE_T2'])}</h3>
+    <h3>${tour === 1 ? '1er Tour' : '2nd Tour'} - ${ELECTION_CONFIG[tour === 1 ? 'ELECTION_DATE_T1' : 'ELECTION_DATE_T2']}</h3>
   </div>
 
   <div class="info">
@@ -919,28 +855,18 @@ const data = (auditData || [])
     <tr>
       <th>Inscrits</th>
       <th>Votants</th>
-      <th>Taux participation</th>
+      <th>Taux de participation</th>
       <th>Blancs</th>
-      <th>Taux blancs</th>
       <th>Nuls</th>
-      <th>Taux nuls</th>
       <th>Exprimés</th>
-      <th>Taux exprimés</th>
-      <th>Procurations</th>
-      <th>Taux procurations</th>
     </tr>
     <tr class="total">
       <td>${formatNumber(consolidation.totalInscrits)}</td>
       <td>${formatNumber(consolidation.totalVotants)}</td>
       <td>${formatPercent(consolidation.tauxParticipation)}</td>
       <td>${formatNumber(consolidation.totalBlancs)}</td>
-      <td>${formatPercent(consolidation.totalInscrits > 0 ? (consolidation.totalBlancs / consolidation.totalInscrits) * 100 : 0)}</td>
       <td>${formatNumber(consolidation.totalNuls)}</td>
-      <td>${formatPercent(consolidation.totalInscrits > 0 ? (consolidation.totalNuls / consolidation.totalInscrits) * 100 : 0)}</td>
       <td>${formatNumber(consolidation.totalExprimes)}</td>
-      <td>${formatPercent(consolidation.totalInscrits > 0 ? (consolidation.totalExprimes / consolidation.totalInscrits) * 100 : 0)}</td>
-      <td>${formatNumber(consolidation.totalProcurations ?? 0)}</td>
-      <td>${formatPercent(consolidation.totalVotants > 0 ? ((consolidation.totalProcurations ?? 0) / consolidation.totalVotants) * 100 : 0)}</td>
     </tr>
   </table>
 
@@ -992,7 +918,6 @@ const data = (auditData || [])
     let totalBlancs = 0;
     let totalNuls = 0;
     let totalExprimes = 0;
-    let totalProcurations = 0;
 
     const voixParListe = {};
     candidats.forEach(c => {
@@ -1007,7 +932,6 @@ const data = (auditData || [])
       totalBlancs += r.blancs;
       totalNuls += r.nuls;
       totalExprimes += r.exprimes;
-      totalProcurations += Number(r.procurations ?? 0);
 
       for (const listeId in voixParListe) {
         voixParListe[listeId].voix += r.voix[listeId] || 0;
@@ -1028,7 +952,6 @@ const data = (auditData || [])
       totalBlancs,
       totalNuls,
       totalExprimes,
-      totalProcurations,
       tauxParticipation: totalInscrits > 0 ? (totalVotants / totalInscrits) * 100 : 0,
       resultatsParListe
     };
@@ -1118,20 +1041,14 @@ const data = (auditData || [])
     // Calculer les totaux (sur la dernière heure disponible par bureau)
     let totalInscrits = 0;
     let totalVotants = 0;
-    let totalNuls = 0;
-    let totalBlancs = 0;
-    let totalExprimes = 0;
 
     validParticipation.forEach((p) => {
       const inscrits = getNumeric(p?.inscrits);
       const lastHour = getLastHour(p);
       const votants = getVotantsForHour(p, lastHour);
 
-      totalInscrits  += inscrits;
-      totalVotants   += votants;
-      totalNuls      += getNumeric(p?.nuls    ?? p?.Nuls);
-      totalBlancs    += getNumeric(p?.blancs  ?? p?.Blancs);
-      totalExprimes  += getNumeric(p?.exprimes ?? p?.Exprimes);
+      totalInscrits += inscrits;
+      totalVotants += votants;
     });
 
     const tauxGlobal = totalInscrits > 0 ? (totalVotants / totalInscrits) * 100 : 0;
@@ -1186,7 +1103,7 @@ const data = (auditData || [])
     <h1>RÉPUBLIQUE FRANÇAISE</h1>
     <h2>Participation - Élections Municipales</h2>
     <h3>${ELECTION_CONFIG.COMMUNE_NAME} (${ELECTION_CONFIG.COMMUNE_CODE})</h3>
-    <h3>${tour === 1 ? '1er Tour' : '2nd Tour'} - ${formatDateFR(ELECTION_CONFIG[tour === 1 ? 'ELECTION_DATE_T1' : 'ELECTION_DATE_T2'])}</h3>
+    <h3>${tour === 1 ? '1er Tour' : '2nd Tour'} - ${ELECTION_CONFIG[tour === 1 ? 'ELECTION_DATE_T1' : 'ELECTION_DATE_T2']}</h3>
   </div>
 
   <div class="info">
@@ -1200,53 +1117,31 @@ const data = (auditData || [])
   <table>
     <tr>
       <th>Bureau</th>
+      <th>Heure</th>
       <th>Inscrits</th>
       <th>Votants</th>
-      <th>Taux participation (%)</th>
-      <th>Nuls</th>
-      <th>Taux nuls (%)</th>
-      <th>Blancs</th>
-      <th>Taux blancs (%)</th>
-      <th>Exprimés</th>
-      <th>Taux exprimés (%)</th>
+      <th>Taux (%)</th>
     </tr>
     ${validParticipation.map(p => {
       const inscrits = getNumeric(p?.inscrits);
       const heure = getLastHour(p);
       const votants = getVotantsForHour(p, heure);
-      const taux       = inscrits > 0 ? (votants   / inscrits) * 100 : 0;
-      const nuls       = getNumeric(p?.nuls    ?? p?.Nuls);
-      const blancs     = getNumeric(p?.blancs  ?? p?.Blancs);
-      const exprimes   = getNumeric(p?.exprimes ?? p?.Exprimes);
-      const tauxNuls   = inscrits > 0 ? (nuls     / inscrits) * 100 : 0;
-      const tauxBlancs = inscrits > 0 ? (blancs   / inscrits) * 100 : 0;
-      const tauxExp    = inscrits > 0 ? (exprimes / inscrits) * 100 : 0;
+      const taux = inscrits > 0 ? (votants / inscrits) * 100 : 0;
       return `
     <tr>
       <td>${p?.bureauId || ''}</td>
+      <td>${heure || ''}</td>
       <td>${formatNumber(inscrits)}</td>
       <td>${formatNumber(votants)}</td>
       <td>${taux.toFixed(2)}%</td>
-      <td>${formatNumber(nuls)}</td>
-      <td>${tauxNuls.toFixed(2)}%</td>
-      <td>${formatNumber(blancs)}</td>
-      <td>${tauxBlancs.toFixed(2)}%</td>
-      <td>${formatNumber(exprimes)}</td>
-      <td>${tauxExp.toFixed(2)}%</td>
     </tr>
       `;
     }).join('')}
     <tr class="total">
-      <td>TOTAL</td>
+      <td colspan="2">TOTAL</td>
       <td>${formatNumber(totalInscrits)}</td>
       <td>${formatNumber(totalVotants)}</td>
       <td>${tauxGlobal.toFixed(2)}%</td>
-      <td>${formatNumber(totalNuls)}</td>
-      <td>${totalInscrits > 0 ? ((totalNuls/totalInscrits)*100).toFixed(2) : '0.00'}%</td>
-      <td>${formatNumber(totalBlancs)}</td>
-      <td>${totalInscrits > 0 ? ((totalBlancs/totalInscrits)*100).toFixed(2) : '0.00'}%</td>
-      <td>${formatNumber(totalExprimes)}</td>
-      <td>${totalInscrits > 0 ? ((totalExprimes/totalInscrits)*100).toFixed(2) : '0.00'}%</td>
     </tr>
   </table>
 
@@ -1325,7 +1220,7 @@ const data = (auditData || [])
     <h1>RÉPUBLIQUE FRANÇAISE</h1>
     <h2>Statistiques - Élections Municipales</h2>
     <h3>${ELECTION_CONFIG.COMMUNE_NAME} (${ELECTION_CONFIG.COMMUNE_CODE})</h3>
-    <h3>${tour === 1 ? '1er Tour' : '2nd Tour'} - ${formatDateFR(ELECTION_CONFIG[tour === 1 ? 'ELECTION_DATE_T1' : 'ELECTION_DATE_T2'])}</h3>
+    <h3>${tour === 1 ? '1er Tour' : '2nd Tour'} - ${ELECTION_CONFIG[tour === 1 ? 'ELECTION_DATE_T1' : 'ELECTION_DATE_T2']}</h3>
   </div>
 
   <div class="info">
@@ -1472,25 +1367,13 @@ const data = (auditData || [])
 
       const taux = inscrits > 0 ? (lastVotants / inscrits) * 100 : 0;
 
-      // Nuls, blancs, exprimés depuis la ligne participation (si présents)
-      const toN2 = (v) => { const n = Number(String(v ?? '').replace(/[   ]/g, '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
-      const nuls2     = toN2(p?.nuls     ?? p?.Nuls);
-      const blancs2   = toN2(p?.blancs   ?? p?.Blancs);
-      const exprimes2 = toN2(p?.exprimes ?? p?.Exprimes);
-
       return {
         'Bureau': bureauId,
         'Nom bureau': bureauNameById.get(String(bureauId)) || '',
         'Inscrits': inscrits,
         ...hourVals,
         'Dernier état (votants)': lastVotants,
-        'Taux participation (%)': Math.round(taux * 100) / 100,
-        'Nuls': nuls2,
-        'Taux nuls (%)': inscrits > 0 ? Math.round((nuls2 / inscrits) * 10000) / 100 : 0,
-        'Blancs': blancs2,
-        'Taux blancs (%)': inscrits > 0 ? Math.round((blancs2 / inscrits) * 10000) / 100 : 0,
-        'Exprimés': exprimes2,
-        'Taux exprimés (%)': inscrits > 0 ? Math.round((exprimes2 / inscrits) * 10000) / 100 : 0,
+        'Taux dernier état': Math.round(taux * 100) / 100,
       };
     });
   }
@@ -1639,7 +1522,7 @@ const data = (auditData || [])
 
     // 3) Calcul métier (on ne fait confiance qu'aux voix + %)
     const totalMunicipal = Number(ELECTION_CONFIG.SEATS_MUNICIPAL_TOTAL) || 35;
-    const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 6;
+    const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 7;
 
     const municipal = calculService
       .calculerSiegesMunicipauxDepuisListes(
@@ -1770,7 +1653,7 @@ const data = (auditData || [])
   generateSiegesHTML(municipal = [], communautaire = [], tour = 1) {
     const t = Number(tour) || 1;
     const totalMunicipal = Number(ELECTION_CONFIG.SEATS_MUNICIPAL_TOTAL) || 35;
-    const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 6;
+    const totalCommunity = Number(ELECTION_CONFIG.SEATS_COMMUNITY_TOTAL) || 7;
 
     const renderTable = (rows, title, total) => {
       const safe = Array.isArray(rows) ? rows : [];

@@ -28,7 +28,6 @@ const AuditLog = React.lazy(() => import("./components/admin/AuditLog"));
 const ExportPDF = React.lazy(() => import("./components/exports/ExportPDF"));
 const ExportExcel = React.lazy(() => import("./components/exports/ExportExcel"));
 const Informations = React.lazy(() => import("./components/informations/Informations"));
-const InformationsParticipation = React.lazy(() => import("./components/informations/InformationsParticipation"));
 
 import { canAccessPage } from "./config/authConfig";
 
@@ -152,8 +151,6 @@ export default function App() {
       return "exports";
     case "informations":
       return "informations";
-    case "info-participation":
-      return "info_participation";
     case "admin":
       return "admin_bureaux";
     case "dashboard":
@@ -192,7 +189,7 @@ export default function App() {
   }, [accessAuth]);
 
   // Bloque pages sensibles si non connecté OAuth (sauf profil INFO qui reste sur informations)
-  const authRequiredPages = new Set(["participation", "resultats", "passage-t2", "sieges", "exports", "admin", "informations", "info-participation"]);
+  const authRequiredPages = new Set(["participation", "resultats", "passage-t2", "sieges", "exports", "admin", "informations"]);
   useEffect(() => {
     if (!isAuthenticated && authRequiredPages.has(currentPage)) {
       if (accessAuth?.role === "INFO") {
@@ -350,14 +347,6 @@ case "informations":
     <>
       {renderAuthGate()}
       {isAuthenticated && <Informations electionState={safeElectionState} />}
-    </>
-  );
-
-case "info-participation":
-  return (
-    <>
-      {renderAuthGate()}
-      {isAuthenticated && <InformationsParticipation electionState={safeElectionState} />}
     </>
   );
 
@@ -661,7 +650,7 @@ case "info-participation":
 
   return (
     <div className={`app-root theme-tour-${safeElectionState.tourActuel}`}>
-      {/* Profil INFO : barre minimale (connexion + tour) avec boutons Informations / Participation */}
+      {/* Profil INFO : barre minimale (connexion + tour) sans menu de navigation */}
       {accessAuth?.role === "INFO" ? (
         <nav className="main-navigation" aria-label="Barre INFO" style={{ paddingBottom: 8 }}>
           <div className="nav-header">
@@ -676,36 +665,13 @@ case "info-participation":
               </div>
             </div>
           </div>
-          {/* ── Boutons navigation INFO : Informations + Participation + actions ── */}
-          <div className="info-profile-nav-row">
-            <div className="info-profile-nav-btns">
-              <span className={`tour-indicator-badge tour-indicator-badge--${safeElectionState.tourActuel === 2 ? 2 : 1}`}>
-                <span className="tour-indicator-icon">{safeElectionState.tourActuel === 2 ? "🔵" : "🟢"}</span>
-                <span className="tour-indicator-text">{safeElectionState.tourActuel === 2 ? "TOUR 2" : "TOUR 1"}</span>
-              </span>
-              <button
-                className={`nav-item nav-item--informations${currentPage === "informations" ? " active" : ""}`}
-                type="button"
-                onClick={() => navigateSafe("informations")}
-              >
-                ℹ️ Informations
-              </button>
-              <button
-                className={`nav-item nav-item--info-participation${currentPage === "info-participation" ? " active" : ""}`}
-                type="button"
-                onClick={() => navigateSafe("info-participation")}
-              >
-                📊 Participation
-              </button>
-            </div>
-            <div className="info-profile-nav-actions">
-              {!isAuthenticated ? (
-                <button className="nav-item nav-item--google-auth" type="button" onClick={handleSignIn}>Connexion Google</button>
-              ) : (
-                <button className="nav-item nav-item--google-auth" type="button" onClick={handleSignOut}>Déconnexion Google</button>
-              )}
-              <button className="nav-item nav-item--quit" type="button" onClick={handleAccessLogout}>Quitter la Session</button>
-            </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.75rem", marginTop: 4 }}>
+            {!isAuthenticated ? (
+              <button className="nav-item nav-item--google-auth" type="button" onClick={handleSignIn}>Connexion Google</button>
+            ) : (
+              <button className="nav-item nav-item--google-auth" type="button" onClick={handleSignOut}>Déconnexion Google</button>
+            )}
+            <button className="nav-item nav-item--quit" type="button" onClick={handleAccessLogout}>Quitter la Session</button>
           </div>
           {/* Bande d'informations bleue */}
           <div className="nav-info">

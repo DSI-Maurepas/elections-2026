@@ -342,8 +342,7 @@ const SiegesCommunautaire = ({ electionState }) => {
                 </td>
               </tr>
             ) : (
-              <>
-                {sieges.map(s => (
+              sieges.map(s => (
                 <tr key={s.candidatId || s.listeId}>
                   <td><strong>{s.nom || s.nomListe}</strong></td>
                   <td>{Number(s.voix || 0).toLocaleString('fr-FR')}</td>
@@ -353,18 +352,7 @@ const SiegesCommunautaire = ({ electionState }) => {
                   <td className="sieges-number">{Number(s.sieges || 0)}</td>
                   <td>{s.methode}</td>
                 </tr>
-                ))}
-                {/* Ligne de total — Prime + Proportionnelle + Total sièges */}
-                <tr style={{ fontWeight: 'bold', background: '#f5f5f5', borderTop: '2px solid #333' }}>
-                  <td><strong>TOTAL</strong></td>
-                  <td>{sieges.reduce((sum, s) => sum + (Number(s.voix) || 0), 0).toLocaleString('fr-FR')}</td>
-                  <td>100%</td>
-                  <td className="sieges-number">{sieges.reduce((sum, s) => sum + (Number(s.siegesPrime) || 0), 0)}</td>
-                  <td className="sieges-number">{sieges.reduce((sum, s) => sum + (Number(s.siegesProportionnels) || 0), 0)}</td>
-                  <td className="sieges-number">{sieges.reduce((sum, s) => sum + (Number(s.sieges) || 0), 0)}</td>
-                  <td>—</td>
-                </tr>
-              </>
+              ))
             )}
           </tbody>
         </table>
