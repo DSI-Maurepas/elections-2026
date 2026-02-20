@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useGoogleSheets } from "../../hooks/useGoogleSheets";
-import calculService from "../../services/calculService";
-import { ELECTION_CONFIG } from "../../utils/constants";
 import "./../../styles/components/informations.css";
 import InformationsEvolutionHoraire from "./InformationsEvolutionHoraire";
 
@@ -75,6 +73,8 @@ export default function Informations({ electionState }) {
   const { data: resultats,     load: loadResultats }    = useGoogleSheets(
     tourVisu === 2 ? "Resultats_T2" : "Resultats_T1"
   );
+  // Resultats_T1 chargé en permanence — nécessaire pour calculer les listes qualifiées T2 (seuil 10%)
+  const { data: resultatsT1, load: loadResultatsT1 } = useGoogleSheets("Resultats_T1");
   const { data: seatsMunicipal,  load: loadSeatsMunicipal }  = useGoogleSheets("Seats_Municipal");
   const { data: seatsCommunity,  load: loadSeatsCommunity }  = useGoogleSheets("Seats_Community");
 
@@ -86,8 +86,9 @@ export default function Informations({ electionState }) {
       loadResultats({}, { silent }),
       loadSeatsMunicipal({}, { silent }),
       loadSeatsCommunity({}, { silent }),
+      loadResultatsT1({}, { silent }),
     ]);
-  }, [loadBureaux, loadCandidats, loadParticipation, loadResultats, loadSeatsMunicipal, loadSeatsCommunity]);
+  }, [loadBureaux, loadCandidats, loadParticipation, loadResultats, loadResultatsT1, loadSeatsMunicipal, loadSeatsCommunity]);
 
   useEffect(() => {
     loadAll(true);
@@ -209,7 +210,33 @@ export default function Informations({ electionState }) {
   const abstention      = useMemo(()=>Math.max(0,(totalInscrits||0)-(votantsRef||0)),[totalInscrits,votantsRef]);
   const tauxAbstention  = useMemo(()=>pct(abstention,totalInscrits),[abstention,totalInscrits]);
 
-  // Top 5 listes
+  // Calcul des ids qualifiés pour le T2 (≥ 10% des suffrages exprimés du T1)
+  // Utilise resultatsT1 (toujours chargé) pour garantir le calcul même quand tourVisu === 2.
+  const idsQualifiesT2 = useMemo(() => {
+    const resT1 = Array.isArray(resultatsT1) ? resultatsT1 : [];
+    const cand  = Array.isArray(candidats)   ? candidats   : [];
+    if (!resT1.length || !cand.length) return null; // null = "pas encore calculable"
+    const nv=(v)=>{const num=Number(String(v??"").replace(",",".").replace(/\s/g,""));return Number.isFinite(num)?num:0;};
+    const totalExpT1 = resT1.reduce((s,r)=>s+nv(r?.exprimes??r?.Exprimes),0);
+    if (totalExpT1 <= 0) return null;
+    const SEUIL = 10;
+    const actifsT1 = cand.filter(c=>!!c.actifT1);
+    const base = actifsT1.length > 0 ? actifsT1 : cand.filter(c=>c?.listeId);
+    const qualifies = new Set();
+    base.forEach((c,i)=>{
+      const id = (c?.listeId??c?.id??c?.code??c?.key);
+      const idStr = id&&String(id).trim() ? String(id).trim() : `L${i+1}`;
+      const fallbackKey = `L${i+1}`;
+      const voixByLiId = resT1.reduce((a,r)=>{const vo=r?.voix||r?.Voix||{};return a+nv(vo?.[idStr]??vo?.[`${idStr}_Voix`]??vo?.[`${idStr}Voix`]);},0);
+      const voixByFallback = idStr!==fallbackKey ? resT1.reduce((a,r)=>{const vo=r?.voix||r?.Voix||{};return a+nv(vo?.[fallbackKey]??vo?.[`${fallbackKey}_Voix`]??vo?.[`${fallbackKey}Voix`]);},0) : 0;
+      const voix = voixByLiId > 0 ? voixByLiId : voixByFallback;
+      if ((voix / totalExpT1) * 100 >= SEUIL) qualifies.add(idStr);
+    });
+    return qualifies; // Set vide = aucune liste qualifiée (données insuffisantes)
+  }, [resultatsT1, candidats]);
+
+  // Classement des listes — source : resultats du tour affiché
+  // En Tour 2 : filtré sur les listes qualifiées T2 (≥ 10% au T1)
   const topListes = useMemo(() => {
     const res=Array.isArray(resultats)?resultats:[];
     const cand=Array.isArray(candidats)?candidats:[];
@@ -221,22 +248,45 @@ export default function Informations({ electionState }) {
       const leg=c?.nom??c?.name??c?.Nom??c?.label; return leg&&String(leg).trim()?String(leg).trim():`Candidat ${i+1}`;
     };
     const getId=(c,i)=>{const id=c?.listeId??c?.id??c?.code??c?.key;return id&&String(id).trim()?String(id).trim():`L${i+1}`;};
-    const actifs=cand.filter(c=>tourVisu===1?!!c.actifT1:!!c.actifT2); if(!actifs.length) return [];
+
+    // Filtre des candidats selon le tour :
+    // T1 : actifT1, fallback sur tous si non renseigné
+    // T2 : strictement les listes qualifiées T2 (≥10% au T1), calculées via idsQualifiesT2
+    //      Si idsQualifiesT2 est null (données T1 pas encore chargées), on attend → []
+    let actifs;
+    if (tourVisu === 2) {
+      if (idsQualifiesT2 === null) return []; // T1 pas encore chargé
+      const actifsFiltresT2 = cand.filter(c => {
+        const id = getId(c, 0); // index 0 car on cherche juste l'id, pas le nom
+        const idStr = (c?.listeId??c?.id??c?.code??c?.key);
+        const idFinal = idStr&&String(idStr).trim() ? String(idStr).trim() : id;
+        return idsQualifiesT2.has(idFinal);
+      });
+      actifs = actifsFiltresT2.length > 0 ? actifsFiltresT2 : [];
+    } else {
+      const actifsFiltresT1 = cand.filter(c=>!!c.actifT1);
+      actifs = actifsFiltresT1.length > 0 ? actifsFiltresT1 : cand.filter(c=>c?.listeId);
+    }
+    if(!actifs.length) return [];
+
     const totalExp=(totauxResultats?.exprimes??0)||res.reduce((a,r)=>a+n(r?.exprimes??r?.Exprimes),0);
     return actifs
       .map((c,i)=>{
         const id=getId(c,i);
-        const voix=res.reduce((a,r)=>{const vo=r?.voix||r?.Voix||{};const v=vo?.[id]??vo?.[`${id}_Voix`]??vo?.[`${id}Voix`];return a+n(v);},0);
+        // Lookup voix par listeId exact d'abord, puis par clé positionnelle L{i+1}
+        const fallbackKey=`L${i+1}`;
+        const voixByLiId=res.reduce((a,r)=>{const vo=r?.voix||r?.Voix||{};return a+n(vo?.[id]??vo?.[`${id}_Voix`]??vo?.[`${id}Voix`]);},0);
+        const voixByFallback=id!==fallbackKey?res.reduce((a,r)=>{const vo=r?.voix||r?.Voix||{};return a+n(vo?.[fallbackKey]??vo?.[`${fallbackKey}_Voix`]??vo?.[`${fallbackKey}Voix`]);},0):0;
+        const voix=voixByLiId>0?voixByLiId:voixByFallback;
         return {listeId:id,nomListe:getName(c,i),voix};
       })
       .sort((a,b)=>(b.voix||0)-(a.voix||0))
-      .slice(0,5)
       .map(x=>({...x,pctVoix:totalExp>0?(x.voix/totalExp)*100:0}));
-  }, [resultats,candidats,tourVisu,totauxResultats]);
+  }, [resultats,candidats,tourVisu,totauxResultats,idsQualifiesT2]);
 
   const seatsByListeId = useMemo(()=>{
     const map=new Map();
-    for(const r of (Array.isArray(seatsCommunity)?seatsCommunity:[])){const id=String(r?.listeId??r?.liste??"").trim();if(id)map.set(id,{...r,siegesTotal:coerceInt(r?.siegesTotal??r?.sieges??0)});}
+    for(const r of (Array.isArray(seatsCommunity)?seatsCommunity:[])){const id=String(r?.listeId??r?.liste??"").trim();if(id)map.set(id,{...r,siegesTotal:coerceInt(r?.siegesTotal??r?.siegesCommunautaires??r?.sieges??0)});}
     return map;
   },[seatsCommunity]);
 
@@ -305,10 +355,16 @@ export default function Informations({ electionState }) {
     };
     const getId = (c, i) => { const id = c?.listeId ?? c?.id ?? c?.code ?? c?.key; return id && String(id).trim() ? String(id).trim() : `L${i + 1}`; };
 
-    const actifs = cand.filter(c => !!c.actifT1);
+    // Filtre actifT1 — fallback sur tous candidats si aucun n'est marqué actif
+    const actifsFiltresAdmises = cand.filter(c => !!c.actifT1);
+    const actifs = actifsFiltresAdmises.length > 0 ? actifsFiltresAdmises : cand.filter(c => c?.listeId);
     const avecVoix = actifs.map((c, i) => {
       const id   = getId(c, i);
-      const voix = res.reduce((a, r) => { const vo = r?.voix || r?.Voix || {}; return a + nv(vo?.[id] ?? vo?.[`${id}_Voix`] ?? vo?.[`${id}Voix`]); }, 0);
+      // Lookup voix par listeId exact, puis fallback L{i+1}
+      const fallbackKey = `L${i+1}`;
+      const voixByLiId = res.reduce((a, r) => { const vo = r?.voix || r?.Voix || {}; return a + nv(vo?.[id] ?? vo?.[`${id}_Voix`] ?? vo?.[`${id}Voix`]); }, 0);
+      const voixByFallback = id !== fallbackKey ? res.reduce((a, r) => { const vo = r?.voix || r?.Voix || {}; return a + nv(vo?.[fallbackKey] ?? vo?.[`${fallbackKey}_Voix`] ?? vo?.[`${fallbackKey}Voix`]); }, 0) : 0;
+      const voix = voixByLiId > 0 ? voixByLiId : voixByFallback;
       const pct  = (voix / totalExp) * 100;
       return { id, nom: getName(c, i), voix, pct };
     });
@@ -332,92 +388,54 @@ export default function Informations({ electionState }) {
     return {bureauLabel:match?.nom?`${match.id} — ${match.nom}`:(rid?`BV${rid}`:"—"),at:best};
   },[resultats,bureaux]);
 
-  // ── Calcul des sièges en mémoire (repli si Google Sheets vide) ──
-  // Même logique que SiegesMunicipal.jsx / SiegesCommunautaire.jsx :
-  // 1) Source prioritaire = onglets Seats_Municipal / Seats_Community
-  // 2) Repli = calculService depuis Résultats + Candidats
-
-  const TOTAL_SIEGES_MUNI = ELECTION_CONFIG?.SEATS_MUNICIPAL_TOTAL || 35;
-  const TOTAL_SIEGES_COMM = ELECTION_CONFIG?.SEATS_COMMUNITY_TOTAL || 7;
-
-  const siegesMunicipaux = useMemo(()=>{
-    // 1) Source prioritaire : onglet Google Sheets (données DÉJÀ calculées)
-    const sheetRows=(Array.isArray(seatsMunicipal)?seatsMunicipal:[])
-      .filter(r=>Number(r?.tour)===tourVisu)
-      .filter(r=>(r?.nomListe||r?.listeId));
-    if(sheetRows.length>0){
-      // Dédupliquer par listeId (protection contre doublons en Sheets)
-      const seen=new Set();
-      const deduped=[];
-      for(const r of sheetRows){
-        const id=(r.listeId||'').toString().trim();
-        if(id&&!seen.has(id)){seen.add(id);deduped.push(r);}
-      }
-      return deduped.map(r=>({
-        listeId:r.listeId||'',
-        nom:r.nomListe||r.listeId||'—',
-        nomListe:r.nomListe||r.listeId||'—',
-        voix:Number(r.voix)||0,
-        pourcentage:Number(r.pctVoix)||0,
-        siegesPrime:Number(r.siegesMajorite)||0,
-        siegesProportionnels:Number(r.siegesProportionnels)||0,
-        sieges:Number(r.siegesTotal)||0,
-      }));
+  // ── Sièges T2 : répartition municipaux et communautaires ────────
+  // Filtre : listes qualifiées T2 (≥10% au T1) via idsQualifiesT2.
+  // Même logique que topListes — pas de fallback "toutes les listes" si actifT2 vide.
+  const _filtreEntriesSieges = (allEntries) => {
+    if (!allEntries.length) return [];
+    // Priorité 1 : idsQualifiesT2 calculé depuis Resultats_T1
+    if (idsQualifiesT2 !== null && idsQualifiesT2.size > 0) {
+      return allEntries.filter(e => idsQualifiesT2.has(String(e.listeId ?? e.liste ?? '').trim()));
     }
-    // 2) Repli : consolider depuis Résultats + Candidats
-    const res=Array.isArray(resultats)?resultats:[];
-    const cand=Array.isArray(candidats)?candidats:[];
-    if(!res.length||!cand.length) return [];
-    const actifs=cand.filter(c=>tourVisu===1?!!c.actifT1:!!c.actifT2);
-    if(!actifs.length) return [];
-    const listes=actifs.map(c=>{
-      const id=c?.listeId||'';
-      const voix=res.reduce((s,r)=>{const vo=r?.voix||{};return s+(Number(vo[id])||0);},0);
-      return {listeId:id,nomListe:c?.nomListe||id,voix,eligible:true};
-    });
-    try{
-      return calculService.calculerSiegesMunicipauxDepuisListes(listes,TOTAL_SIEGES_MUNI);
-    }catch(e){console.warn('Erreur calcul sièges muni (repli):',e);return [];}
-  },[seatsMunicipal,resultats,candidats,tourVisu,TOTAL_SIEGES_MUNI]);
-
-  const siegesCommunautaires = useMemo(()=>{
-    // 1) Source prioritaire : onglet Google Sheets (données DÉJÀ calculées)
-    const sheetRows=(Array.isArray(seatsCommunity)?seatsCommunity:[])
-      .filter(r=>(r?.nomListe||r?.listeId));
-    if(sheetRows.length>0){
-      // Dédupliquer par listeId (protection contre doublons en Sheets)
-      const seen=new Set();
-      const deduped=[];
-      for(const r of sheetRows){
-        const id=(r.listeId||'').toString().trim();
-        if(id&&!seen.has(id)){seen.add(id);deduped.push(r);}
-      }
-      return deduped.map(r=>({
-        listeId:(r.listeId||'').toString().trim(),
-        nom:(r.nomListe||r.listeId||'—').toString().trim(),
-        nomListe:(r.nomListe||r.listeId||'—').toString().trim(),
-        voix:Number(r.voixMunicipal??r.voix??0)||0,
-        pourcentage:Number(r.pctMunicipal??r.pctVoix??0)||0,
-        sieges:Number(r.siegesCommunautaires??r.siegesTotal??0)||0,
-        siegesPrime:0,
-        siegesProportionnels:Number(r.siegesCommunautaires??r.siegesTotal??0)||0,
-      }));
+    // Priorité 2 : actifT2 renseigné dans Candidats
+    const cand = Array.isArray(candidats) ? candidats : [];
+    const activeT2Ids = new Set(
+      cand.filter(c => !!c.actifT2).map(c => String(c.listeId ?? c.id ?? '').trim()).filter(Boolean)
+    );
+    if (activeT2Ids.size > 0) {
+      return allEntries.filter(e => activeT2Ids.has(String(e.listeId ?? e.liste ?? '').trim()));
     }
-    // 2) Repli : consolider depuis Résultats + Candidats
-    const res=Array.isArray(resultats)?resultats:[];
-    const cand=Array.isArray(candidats)?candidats:[];
-    if(!res.length||!cand.length) return [];
-    const actifs=cand.filter(c=>tourVisu===1?!!c.actifT1:!!c.actifT2);
-    if(!actifs.length) return [];
-    const listes=actifs.map(c=>{
-      const id=c?.listeId||'';
-      const voix=res.reduce((s,r)=>{const vo=r?.voix||{};return s+(Number(vo[id])||0);},0);
-      return {listeId:id,nomListe:c?.nomListe||id,voixMunicipal:voix,eligible:true};
-    });
-    try{
-      return calculService.calculerSiegesCommunautairesDepuisListes(listes,TOTAL_SIEGES_COMM);
-    }catch(e){console.warn('Erreur calcul sièges comm (repli):',e);return [];}
-  },[seatsCommunity,resultats,candidats,tourVisu,TOTAL_SIEGES_COMM]);
+    // Aucune information disponible : ne rien afficher (pas de fallback sur toutes les listes)
+    return [];
+  };
+
+  const siegesMuniDisplay = useMemo(() => {
+    const allEntries = Array.from(muniByListeId.values());
+    if (!allEntries.length) return { items: [], total: 0 };
+    const entries = _filtreEntriesSieges(allEntries);
+    const total = entries.reduce((s, e) => s + coerceInt(e.siegesTotal), 0);
+    const items = entries.map(e => {
+      const id = String(e.listeId ?? e.liste ?? '').trim();
+      const tl = topListes.find(l => l.listeId === id);
+      const nom = (e.nomListe ?? e.nom ?? '').toString().trim() || tl?.nomListe || id;
+      return { listeId: id, nomListe: nom, sieges: coerceInt(e.siegesTotal) };
+    }).sort((a, b) => b.sieges - a.sieges || a.nomListe.localeCompare(b.nomListe, 'fr'));
+    return { items, total };
+  }, [muniByListeId, candidats, topListes, idsQualifiesT2]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const siegesCommDisplay = useMemo(() => {
+    const allEntries = Array.from(seatsByListeId.values());
+    if (!allEntries.length) return { items: [], total: 0 };
+    const entries = _filtreEntriesSieges(allEntries);
+    const total = entries.reduce((s, e) => s + coerceInt(e.siegesTotal), 0);
+    const items = entries.map(e => {
+      const id = String(e.listeId ?? e.liste ?? '').trim();
+      const tl = topListes.find(l => l.listeId === id);
+      const nom = (e.nomListe ?? e.nom ?? '').toString().trim() || tl?.nomListe || id;
+      return { listeId: id, nomListe: nom, sieges: coerceInt(e.siegesTotal) };
+    }).sort((a, b) => b.sieges - a.sieges || a.nomListe.localeCompare(b.nomListe, 'fr'));
+    return { items, total };
+  }, [seatsByListeId, candidats, topListes, idsQualifiesT2]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tourLabel  = tourVisu===2?"Tour 2":"Tour 1";
   const themeClass = tourVisu===2?"t2":"t1";
@@ -527,7 +545,7 @@ export default function Informations({ electionState }) {
       {/* ══ GRILLE 3 COLONNES ═══════════════════════════════════════
           A (1fr) Résultats+Classement | B (2fr) Particip+Evo+BV | C (1fr) Candidats qualifiés
       ══════════════════════════════════════════════════════════════ */}
-      <section className="info-grid">
+      <section className={`info-grid${tourVisu === 2 ? " info-grid--t2" : ""}`}>
 
         {/* ── COL A : Résultats suffrages + Classement listes ── */}
         <div className="info-col-a">
@@ -577,62 +595,13 @@ export default function Informations({ electionState }) {
                         <div className="rank-sub">{fmtInt(l?.voix)} voix — {fmtPct(l?.pctVoix)}</div>
                         <div className="rank-bar-wrap"><div className="rank-bar" style={{width:`${Math.min(100,l?.pctVoix||0)}%`}}/></div>
                       </div>
-                      {(hasMuni||hasComm)&&(
-                        <div className="rank-seats">
-                          {hasMuni&&<div className="seat"><div className="seat-label">Mun.</div><div className="seat-value">{fmtInt(muni?.siegesTotal)}</div></div>}
-                          {hasComm&&<div className="seat"><div className="seat-label">Com.</div><div className="seat-value">{fmtInt(comm?.siegesTotal)}</div></div>}
-                        </div>
-                      )}
+                      {/* sièges municipaux T1 : non applicable — retiré */}
                     </div>
                   );
                 })
               )}
             </div>
           </article>
-
-          {/* ─── Sièges Municipaux (T2 uniquement) ─── */}
-          {tourVisu===2&&(
-            <article className="info-card info-card-sieges">
-              <div className="card-title">🏛 Sièges Municipaux</div>
-              {(()=>{
-                const muniList=(Array.isArray(siegesMunicipaux)?siegesMunicipaux:[])
-                  .filter(r=>(Number(r?.sieges)||0)>0||(Number(r?.siegesPrime)||0)>0||(Number(r?.siegesProportionnels)||0)>0);
-                const totalMuni=muniList.reduce((s,r)=>s+(Number(r?.sieges)||0),0);
-                if(!muniList.length) return <div className="empty">En attente du calcul des sièges.</div>;
-                return (
-                  <>
-                    <div className="sieges-total-banner">
-                      <span className="sieges-total-nb">{fmtInt(totalMuni)}</span>
-                      <span className="sieges-total-label">sièges attribués</span>
-                    </div>
-                    <div className="sieges-list">
-                      {muniList.map((r,i)=>{
-                        const nom=r?.nom||r?.nomListe||r?.listeId||`Liste ${i+1}`;
-                        const maj=Number(r?.siegesPrime)||0;
-                        const prop=Number(r?.siegesProportionnels)||0;
-                        const total=Number(r?.sieges)||0;
-                        return (
-                          <div key={r?.listeId||r?.candidatId||i} className={`sieges-row${i===0?" sieges-row--first":""}`}>
-                            <div className="sieges-row-name">{nom}</div>
-                            <div className="sieges-row-detail">
-                              <span className="sieges-badge sieges-badge--maj" title="Majorité">{maj}</span>
-                              <span className="sieges-badge sieges-badge--prop" title="Proportionnelle">{prop}</span>
-                              <span className="sieges-badge sieges-badge--total">{total}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="sieges-legende">
-                      <span className="sieges-legende-item"><span className="sieges-badge sieges-badge--maj sieges-badge--sm">M</span> Majorité</span>
-                      <span className="sieges-legende-item"><span className="sieges-badge sieges-badge--prop sieges-badge--sm">P</span> Proportionnelle</span>
-                      <span className="sieges-legende-item"><span className="sieges-badge sieges-badge--total sieges-badge--sm">T</span> Total</span>
-                    </div>
-                  </>
-                );
-              })()}
-            </article>
-          )}
 
         </div>
 
@@ -693,7 +662,7 @@ export default function Informations({ electionState }) {
 
         </div>
 
-        {/* ── COL C : T1 = Listes admises / T2 = Listes Élues ── */}
+        {/* ── COL C : T1 = Listes admises / T2 = Liste Élue ── */}
         <div className="info-col-c">
           {tourVisu===1?(
             /* ─── T1 : Listes admises pour le 2nd tour ─── */
@@ -734,10 +703,9 @@ export default function Informations({ electionState }) {
               )}
             </article>
           ):(
-            <>
-            {/* ─── T2 : Listes Élues ─── */}
+            /* ─── T2 : Liste Élue ─── */
             <article className="info-card info-card-qualifies">
-              <div className="card-title">🏆 Listes Élues</div>
+              <div className="card-title">🏆 Liste Élue</div>
               {topListes.length===0?(
                 <div className="qualif-empty">En attente des résultats du 2nd tour.</div>
               ):(
@@ -746,7 +714,7 @@ export default function Informations({ electionState }) {
                     Résultats du scrutin du 2nd tour — Maurepas.
                   </div>
                   <div className="qualif-summary-tile" style={{background:"#0b3b86"}}>
-                    <div className="qualif-summary-nb" style={{fontSize:34}}>🏆🏛️</div>
+                    <div className="qualif-summary-nb" style={{fontSize:34}}>🏆</div>
                     <div className="qualif-summary-label">{topListes[0]?.nomListe||"—"}</div>
                     <div className="qualif-summary-sub">{fmtInt(topListes[0]?.voix)} voix — {fmtPct(topListes[0]?.pctVoix)}</div>
                   </div>
@@ -754,7 +722,7 @@ export default function Informations({ electionState }) {
                     {topListes.map((l,i)=>(
                       <div key={l.listeId||i} className={`qualif-card${i===0?" qualif-card--first":""}`}>
                         <div className="qualif-card-top">
-                          <span className="qualif-rank">{i===0?"🏆 ÉLU":ordinal(i)}</span>
+                          <span className="qualif-rank">{i===0?"🏆 ÉLUE":ordinal(i)}</span>
                           <span className="qualif-voix">{fmtInt(l.voix)} voix</span>
                         </div>
                         <div className="qualif-nom">{l.nomListe||l.listeId}</div>
@@ -766,42 +734,74 @@ export default function Informations({ electionState }) {
                 </>
               )}
             </article>
-
-            {/* ─── Sièges Communautaires (T2 uniquement) ─── */}
-            <article className="info-card info-card-sieges">
-              <div className="card-title">🏘 Sièges Communautaires</div>
-              {(()=>{
-                const commList=(Array.isArray(siegesCommunautaires)?siegesCommunautaires:[])
-                  .filter(r=>(Number(r?.sieges)||0)>0);
-                const totalComm=commList.reduce((s,r)=>s+(Number(r?.sieges)||0),0);
-                if(!commList.length) return <div className="empty">En attente du calcul des sièges.</div>;
-                return (
-                  <>
-                    <div className="sieges-total-banner sieges-total-banner--comm">
-                      <span className="sieges-total-nb">{fmtInt(totalComm)}</span>
-                      <span className="sieges-total-label">sièges communautaires</span>
-                    </div>
-                    <div className="sieges-list">
-                      {commList.map((r,i)=>{
-                        const nom=r?.nom||r?.nomListe||r?.listeId||`Liste ${i+1}`;
-                        const sieges=Number(r?.sieges)||0;
-                        return (
-                          <div key={r?.listeId||r?.candidatId||i} className={`sieges-row${i===0?" sieges-row--first":""}`}>
-                            <div className="sieges-row-name">{nom}</div>
-                            <div className="sieges-row-detail">
-                              <span className="sieges-badge sieges-badge--total">{sieges}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                );
-              })()}
-            </article>
-            </>
           )}
         </div>
+
+        {/* ══ BAS-GAUCHE : Sièges Municipaux — visible T2 uniquement ══ */}
+        {tourVisu === 2 && (
+          <div className="info-col-sieg-muni">
+            <article className="info-card info-card-sieges">
+              <div className="card-title">Répartition — Sièges Municipaux</div>
+              {siegesMuniDisplay.total > 0 && (
+                <div className="sieges-badge">
+                  <span className="sieges-badge-nb">{siegesMuniDisplay.total}</span>
+                  <span className="sieges-badge-label">sièges au total</span>
+                </div>
+              )}
+              <div className="sieges-list">
+                {siegesMuniDisplay.items.length === 0 ? (
+                  <div className="empty">Données en attente.</div>
+                ) : (
+                  siegesMuniDisplay.items.map((l, i) => (
+                    <div key={l.listeId || i} className={`sieges-row${i === 0 ? " sieges-row--first" : ""}`}>
+                      <div className="sieges-rank">{i + 1}</div>
+                      <div className="sieges-main">
+                        <div className="sieges-nom" title={l.nomListe}>{l.nomListe}</div>
+                        <div className="sieges-bar-wrap">
+                          <div className="sieges-bar" style={{ width: `${siegesMuniDisplay.total > 0 ? Math.min(100, (l.sieges / siegesMuniDisplay.total) * 100) : 0}%` }} />
+                        </div>
+                      </div>
+                      <div className="sieges-count">{l.sieges}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </article>
+          </div>
+        )}
+
+        {/* ══ BAS-DROITE : Sièges Communautaires — visible T2 uniquement ══ */}
+        {tourVisu === 2 && (
+          <div className="info-col-sieg-comm">
+            <article className="info-card info-card-sieges">
+              <div className="card-title">Répartition — Sièges Communautaires</div>
+              {siegesCommDisplay.total > 0 && (
+                <div className="sieges-badge">
+                  <span className="sieges-badge-nb">{siegesCommDisplay.total}</span>
+                  <span className="sieges-badge-label">sièges au total</span>
+                </div>
+              )}
+              <div className="sieges-list">
+                {siegesCommDisplay.items.length === 0 ? (
+                  <div className="empty">Données en attente.</div>
+                ) : (
+                  siegesCommDisplay.items.map((l, i) => (
+                    <div key={l.listeId || i} className={`sieges-row${i === 0 ? " sieges-row--first" : ""}`}>
+                      <div className="sieges-rank">{i + 1}</div>
+                      <div className="sieges-main">
+                        <div className="sieges-nom" title={l.nomListe}>{l.nomListe}</div>
+                        <div className="sieges-bar-wrap">
+                          <div className="sieges-bar" style={{ width: `${siegesCommDisplay.total > 0 ? Math.min(100, (l.sieges / siegesCommDisplay.total) * 100) : 0}%` }} />
+                        </div>
+                      </div>
+                      <div className="sieges-count">{l.sieges}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </article>
+          </div>
+        )}
 
       </section>
 

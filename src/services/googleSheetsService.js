@@ -426,10 +426,10 @@ async sleep(ms) {
         }));
 
       case 'Resultats_T1':
-      case 'Resultats_T2':
+      case 'Resultats_T2': {
         // Colonnes attendues (Google Sheets):
         // A BureauID | B Inscrits | C Votants | D Blancs | E Nuls | F Exprimes | G..L L1_Voix..L6_Voix | M SaisiPar | N ValidePar | O Timestamp
-        return rows.map(row => {
+        const mapped = rows.map(row => {
           const voix = {
             L1: parseInt(row[6]) || 0,
             L2: parseInt(row[7]) || 0,
@@ -452,6 +452,33 @@ async sleep(ms) {
             timestamp: row[14] || ''
           };
         });
+
+        // ── Déduplication par bureauId ────────────────────────────────────────
+        // En cas de double saisie (appendRow déclenché deux fois), on garde
+        // uniquement la ligne avec le plus grand nombre de suffrages exprimés.
+        // Si deux lignes ont le même exprimes, on prend la dernière (rowIndex max).
+        const byBureau = new Map();
+        mapped.forEach(r => {
+          const key = String(r.bureauId || '').trim().toUpperCase();
+          if (!key) return; // ignorer les lignes sans bureauId
+          const existing = byBureau.get(key);
+          if (!existing) {
+            byBureau.set(key, r);
+          } else {
+            const newExprimes = Number(r.exprimes) || 0;
+            const curExprimes = Number(existing.exprimes) || 0;
+            // Priorité : exprimes le plus grand ; à égalité, rowIndex le plus récent
+            if (newExprimes > curExprimes ||
+               (newExprimes === curExprimes && (r.rowIndex ?? 0) > (existing.rowIndex ?? 0))) {
+              byBureau.set(key, r);
+            }
+          }
+        });
+
+        const deduped = Array.from(byBureau.values());
+
+        return deduped;
+      }
 
       case 'Seats_Municipal':
         // Colonnes attendues :
@@ -534,6 +561,28 @@ default:
 this._setCached(key, filtered);
       return filtered;
     });
+  }
+
+  /**
+   * Identique à getData, mais vide le cache et les requêtes inflight
+   * AVANT de lire, garantissant des données fraîches depuis Google Sheets.
+   *
+   * À utiliser UNIQUEMENT avant une écriture critique (ex: handleBlur dans ParticipationSaisie)
+   * pour éviter de réécrire des données périmées (stale) depuis le state React.
+   *
+   * ⚠️ Ne pas utiliser en boucle / en auto-refresh (performance / quotas).
+   */
+  async getDataFresh(sheetName, filters = {}) {
+    // Vider tout le cache + inflight pour cette sheet
+    const normalizedSheet = this.normalizeSheetName(sheetName);
+    for (const k of Array.from(this._cache.keys())) {
+      if (String(k).includes(normalizedSheet)) this._cache.delete(k);
+    }
+    for (const k of Array.from(this._inflight.keys())) {
+      if (String(k).includes(normalizedSheet)) this._inflight.delete(k);
+    }
+    // Lecture fraîche
+    return await this.getData(sheetName, filters);
   }
 
 

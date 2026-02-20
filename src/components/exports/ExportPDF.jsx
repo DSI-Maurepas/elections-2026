@@ -51,6 +51,13 @@ const ExportPDF = ({ electionState }) => {
 
         <button
           className={`export-btn ${tourActuel === 1 ? 't1' : 't2'}`}
+          onClick={() => handleExport('affiche_resultats')}
+        >
+          🗺️ Affiche Résultats (PDF)
+        </button>
+
+        <button
+          className={`export-btn ${tourActuel === 1 ? 't1' : 't2'}`}
           onClick={() => handleExport('sieges')}
         >
           🪑 Répartition sièges

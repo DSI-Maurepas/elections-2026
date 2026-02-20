@@ -46,12 +46,20 @@ export default function ResultatsSaisieBureau({ electionState: electionStateProp
   const [inputsMain, setInputsMain] = useState({
     inscrits: '',
     votants: '',
+    procurations: '',
     blancs: '',
     nuls: '',
     exprimes: '',
   });
 
   const [inputsVoix, setInputsVoix] = useState({});
+
+  // ── Verrous anti-doublon ─────────────────────────────────────────────────────
+  // isSavingRef : empêche deux sauvegardes concurrentes (onBlur multiples rapides)
+  const isSavingRef = useRef(false);
+  // appendedRowIndexRef : après un premier appendRow réussi, mémorise le rowIndex
+  // pour que les sauvegardes suivantes utilisent updateRow même si row state est stale
+  const appendedRowIndexRef = useRef(null);
 
   useEffect(() => {
     if (forcedBureauId) setSelectedBureauId(forcedBureauId);
@@ -158,24 +166,6 @@ useEffect(() => {
 }, [tourActuel, isAdmin]);
 
 
-  // Recalcul automatique des EXPRIMÉS quand les voix changent
-  useEffect(() => {
-    // Calculer la somme des voix de toutes les listes
-    let sommeVoix = 0;
-    Object.keys(inputsVoix).forEach((key) => {
-      const voix = Number(inputsVoix[key]);
-      if (!isNaN(voix)) {
-        sommeVoix += voix;
-      }
-    });
-
-    // Mettre à jour le champ EXPRIMÉS automatiquement
-    setInputsMain((prev) => ({
-      ...prev,
-      exprimes: sommeVoix > 0 ? String(sommeVoix) : ''
-    }));
-  }, [inputsVoix]);
-
   const bureauOptions = useMemo(() => {
     const list = Array.isArray(bureaux) ? bureaux : [];
     return list
@@ -204,9 +194,13 @@ useEffect(() => {
   }, [bureaux]);
 
   useEffect(() => {
+    // Reset des verrous anti-doublon à chaque changement de bureau
+    isSavingRef.current = false;
+    appendedRowIndexRef.current = null;
+
     if (!selectedBureauId) {
       setRow(null);
-      setInputsMain({ inscrits: '', votants: '', blancs: '', nuls: '', exprimes: '' });
+      setInputsMain({ inscrits: '', votants: '', procurations: '', blancs: '', nuls: '', exprimes: '' });
       setInputsVoix({});
       setIsLocked(false);
       return;
@@ -224,6 +218,7 @@ useEffect(() => {
     const nextMain = {
       inscrits: String(inscritsFromBureaux || ''),
       votants: current ? String(current.votants ?? '') : '',
+      procurations: current ? String(current.procurations ?? '') : '',
       blancs: current ? String(current.blancs ?? '') : '',
       nuls: current ? String(current.nuls ?? '') : '',
       exprimes: current ? String(current.exprimes ?? '') : '',
@@ -264,6 +259,7 @@ useEffect(() => {
       bureauId: selectedBureauId,
       inscrits: coerceInt(inputsMain.inscrits),
       votants: votants,
+      procurations: coerceInt(inputsMain.procurations),
       blancs: blancs,
       nuls: nuls,
       exprimes: exprimes,
@@ -277,27 +273,58 @@ useEffect(() => {
   const saveCurrentRow = useCallback(async (fieldLabelForAudit) => {
     if (!selectedBureauId) return;
 
-    const rowData = buildRowData();
-
-    if (row && (row.rowIndex !== undefined && row.rowIndex !== null)) {
-      await googleSheetsService.updateRow(resultatsSheet, row.rowIndex, rowData);
-    } else {
-      await googleSheetsService.appendRow(resultatsSheet, rowData);
+    // ── Verrou anti-doublon : si une sauvegarde est déjà en cours, on abandonne ──
+    if (isSavingRef.current) {
+      console.warn('[ResultatsSaisieBureau] saveCurrentRow ignorée : sauvegarde en cours');
+      return;
     }
+    isSavingRef.current = true;
 
     try {
-      await auditService.log?.('RESULTATS_SAISIE', {
-        tour: tourActuel,
-        bureauId: selectedBureauId,
-        champ: fieldLabelForAudit || 'SAVE',
-      });
-    } catch (_) {}
+      const rowData = buildRowData();
 
-    await reloadResultats();
+      // rowIndex source : état React (row) OU ref mémorisée après un premier appendRow
+      const effectiveRowIndex = row?.rowIndex ?? appendedRowIndexRef.current;
 
-    const refreshed = findRowForBureau(selectedBureauId);
-    setRow(refreshed);
-  }, [buildRowData, findRowForBureau, reloadResultats, resultatsSheet, row, selectedBureauId, tourActuel]);
+      if (effectiveRowIndex !== undefined && effectiveRowIndex !== null) {
+        await googleSheetsService.updateRow(resultatsSheet, effectiveRowIndex, rowData);
+      } else {
+        const appended = await googleSheetsService.appendRow(resultatsSheet, rowData);
+        // Mémoriser le rowIndex retourné pour éviter tout appendRow ultérieur sur ce bureau
+        if (appended?.rowIndex !== undefined && appended?.rowIndex !== null) {
+          appendedRowIndexRef.current = appended.rowIndex;
+        }
+      }
+
+      try {
+        await auditService.log?.('RESULTATS_SAISIE', {
+          tour: tourActuel,
+          bureauId: selectedBureauId,
+          champ: fieldLabelForAudit || 'SAVE',
+        });
+      } catch (_) {}
+
+      // reloadResultats() retourne le tableau frais directement (résultat de load()).
+      // On l'utilise immédiatement pour alimenter appendedRowIndexRef SANS dépendre
+      // du state React (qui n'est pas encore mis à jour dans la même frame async).
+      const freshData = await reloadResultats();
+      const freshRows = Array.isArray(freshData) ? freshData : [];
+      const refreshed = freshRows.find(
+        r => String(r?.bureauId ?? '').trim().toUpperCase().replace(/\D/g, '') ===
+             String(selectedBureauId ?? '').trim().toUpperCase().replace(/\D/g, '')
+      ) || null;
+
+      if (refreshed !== null) {
+        setRow(refreshed);
+        // Mémoriser le rowIndex frais — évite tout appendRow ultérieur sur ce bureau
+        if (refreshed.rowIndex !== undefined && refreshed.rowIndex !== null) {
+          appendedRowIndexRef.current = refreshed.rowIndex;
+        }
+      }
+    } finally {
+      isSavingRef.current = false;
+    }
+  }, [buildRowData, reloadResultats, resultatsSheet, row, selectedBureauId, tourActuel]);
 
   const onBlurMain = async (field) => {
     try {
@@ -958,8 +985,8 @@ useEffect(() => {
         /* Responsive pour la grille des champs */
         .resultats-saisie-grid {
           display: grid;
-          grid-template-columns: repeat(5, minmax(120px, 1fr));
-          gap: 10px;
+          grid-template-columns: repeat(6, minmax(110px, 1fr));
+          gap: 8px;
           margin: 10px 0 16px;
         }
 
@@ -1417,12 +1444,31 @@ useEffect(() => {
                 value={inputsMain.votants}
                 onChange={(e) => setInputsMain((prev) => ({ ...prev, votants: e.target.value }))}
                 onBlur={() => onBlurMain('votants')}
-                disabled={(isLocked || adminValidated) && !isAdmin}
+                disabled={isLocked && !isAdmin}
                 style={{ 
                   width: '100%', 
                   padding: 6,
-                  background: ((isLocked || adminValidated) && !isAdmin) ? '#f0f0f0' : '#fff',
-                  cursor: ((isLocked || adminValidated) && !isAdmin) ? 'not-allowed' : 'text'
+                  background: (isLocked && !isAdmin) ? '#f0f0f0' : '#fff',
+                  cursor: (isLocked && !isAdmin) ? 'not-allowed' : 'text'
+                }}
+              />
+            </div>
+
+            {/* PROCURATIONS */}
+            <div className="resultats-field-procurations">
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>PROCURATIONS</div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={inputsMain.procurations}
+                onChange={(e) => setInputsMain((prev) => ({ ...prev, procurations: e.target.value }))}
+                onBlur={() => onBlurMain('procurations')}
+                disabled={isLocked && !isAdmin}
+                style={{
+                  width: '100%',
+                  padding: 6,
+                  background: (isLocked && !isAdmin) ? '#f0f0f0' : '#fff',
+                  cursor: (isLocked && !isAdmin) ? 'not-allowed' : 'text'
                 }}
               />
             </div>
@@ -1436,12 +1482,12 @@ useEffect(() => {
                 value={inputsMain.blancs}
                 onChange={(e) => setInputsMain((prev) => ({ ...prev, blancs: e.target.value }))}
                 onBlur={() => onBlurMain('blancs')}
-                disabled={(isLocked || adminValidated) && !isAdmin}
+                disabled={isLocked && !isAdmin}
                 style={{ 
                   width: '100%', 
                   padding: 6,
-                  background: ((isLocked || adminValidated) && !isAdmin) ? '#f0f0f0' : '#fff',
-                  cursor: ((isLocked || adminValidated) && !isAdmin) ? 'not-allowed' : 'text'
+                  background: (isLocked && !isAdmin) ? '#f0f0f0' : '#fff',
+                  cursor: (isLocked && !isAdmin) ? 'not-allowed' : 'text'
                 }}
               />
             </div>
@@ -1455,12 +1501,12 @@ useEffect(() => {
                 value={inputsMain.nuls}
                 onChange={(e) => setInputsMain((prev) => ({ ...prev, nuls: e.target.value }))}
                 onBlur={() => onBlurMain('nuls')}
-                disabled={(isLocked || adminValidated) && !isAdmin}
+                disabled={isLocked && !isAdmin}
                 style={{ 
                   width: '100%', 
                   padding: 6,
-                  background: ((isLocked || adminValidated) && !isAdmin) ? '#f0f0f0' : '#fff',
-                  cursor: ((isLocked || adminValidated) && !isAdmin) ? 'not-allowed' : 'text'
+                  background: (isLocked && !isAdmin) ? '#f0f0f0' : '#fff',
+                  cursor: (isLocked && !isAdmin) ? 'not-allowed' : 'text'
                 }}
               />
             </div>
@@ -1472,10 +1518,16 @@ useEffect(() => {
                 type="text"
                 inputMode="numeric"
                 value={inputsMain.exprimes}
-                readOnly
-                disabled
-                style={{ width: '100%', padding: 6, background: '#f0f0f0', cursor: 'not-allowed', fontWeight: 700 }}
-                title="Exprimés issus du Google Sheet (lecture seule)"
+                onChange={(e) => setInputsMain((prev) => ({ ...prev, exprimes: e.target.value }))}
+                onBlur={() => onBlurMain('exprimes')}
+                disabled={(isLocked || adminValidated) && !isAdmin}
+                style={{
+                  width: '100%',
+                  padding: 6,
+                  background: ((isLocked || adminValidated) && !isAdmin) ? '#f0f0f0' : '#fff',
+                  cursor: ((isLocked || adminValidated) && !isAdmin) ? 'not-allowed' : 'text',
+                  fontWeight: 700
+                }}
               />
             </div>
           </div>
@@ -1534,8 +1586,8 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Bouton VERROUILLER en 4ème position (uniquement pour profils BV) */}
-            {!isAdmin && (
+            {/* Bouton VERROUILLER en 4ème position — BV ET ADMIN */}
+            {(isAdmin ? selectedBureauId : true) && (
               <div 
                 className="btn-verrouiller-container"
                 style={{
@@ -1596,7 +1648,7 @@ useEffect(() => {
                   opacity: adminValidated ? 0.4 : (canLock || isLocked ? 1 : 0.5),
                   color: adminValidated ? '#9ca3af' : (isLocked ? '#475569' : (canLock ? '#f59e0b' : '#9ca3af'))
                 }}>
-                  {adminValidated ? 'Admin validé' : (isLocked ? 'Verrouillé' : 'Verrouiller')}
+                  {adminValidated ? 'Admin validé' : (isLocked ? `Verrouillé` : `Verrouiller ${selectedBureauId ? 'BV'+selectedBureauId : ''}`)}
                 </div>
               </div>
             )}
@@ -1607,9 +1659,10 @@ useEffect(() => {
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '35%' }}>Liste</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '32%' }}>Liste</th>
                 <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '10%' }}>Voix</th>
-				<th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Tête de liste</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6, width: '8%' }}>%</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd', padding: 6 }}>Tête de liste</th>
               </tr>
             </thead>
             <tbody>
@@ -1617,6 +1670,12 @@ useEffect(() => {
                 const listeId = String(c?.listeId ?? '').trim();
                 const nomListe = String(c?.nomListe ?? '').trim();
                 const tete = `${String(c?.teteListePrenom ?? '').trim()} ${String(c?.teteListeNom ?? '').trim()}`.trim();
+
+                const voix = parseInt(inputsVoix[listeId] ?? '', 10);
+                const expVoix = controles.exprimes || 0;
+                const pctVoix = (Number.isFinite(voix) && expVoix > 0)
+                  ? ((voix / expVoix) * 100).toFixed(1).replace('.', ',') + ' %'
+                  : '—';
 
                 return (
                   <tr key={listeId || nomListe || Math.random().toString(16).slice(2)}>
@@ -1629,13 +1688,16 @@ useEffect(() => {
                         onChange={(e) => setInputsVoix((prev) => ({ ...prev, [listeId]: e.target.value }))}
                         onBlur={() => onBlurVoix(listeId)}
                         disabled={(isLocked || adminValidated) && !isAdmin}
-                        style={{ 
-                          width: '100%', 
+                        style={{
+                          width: '100%',
                           padding: 6,
                           background: ((isLocked || adminValidated) && !isAdmin) ? '#f0f0f0' : '#fff',
                           cursor: ((isLocked || adminValidated) && !isAdmin) ? 'not-allowed' : 'text'
                         }}
                       />
+                    </td>
+                    <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      {pctVoix}
                     </td>
                     <td style={{ borderBottom: '1px solid #f0f0f0', padding: 6 }}>{tete || '—'}</td>
                   </tr>
@@ -1643,7 +1705,7 @@ useEffect(() => {
               })}
               {candidatsActifs.length === 0 && (
                 <tr>
-                  <td colSpan={3} style={{ padding: 10, opacity: 0.8 }}>
+                  <td colSpan={4} style={{ padding: 10, opacity: 0.8 }}>
                     Aucun candidat actif pour le tour {tourActuel}.
                   </td>
                 </tr>

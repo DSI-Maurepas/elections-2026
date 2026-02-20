@@ -62,6 +62,13 @@ const ExportExcel = ({ electionState }) => {
 
         <button
           className={`export-btn ${tourActuel === 1 ? 't1' : 't2'}`}
+          onClick={() => handleExport('affiche_resultats')}
+        >
+          🗺️ Affiche Résultats (XLSX)
+        </button>
+
+        <button
+          className={`export-btn ${tourActuel === 1 ? 't1' : 't2'}`}
           onClick={() => handleExport('complet')}
         >
           📦 Export complet

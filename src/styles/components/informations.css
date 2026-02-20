@@ -133,7 +133,21 @@
 .info-col-b { grid-area: colb; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .info-col-c { grid-area: colc; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
-/* ─── Alignement rectangle : le dernier card de chaque colonne absorbe l'espace restant ─── */
+/* ─── T2 : grille étendue — col B span 2 rangées, sièges en bas ─── */
+.info-grid--t2 {
+  grid-template-areas:
+    "cola  colb  colc"
+    "sieg-muni  colb  sieg-comm";
+  align-items: stretch;
+}
+.info-col-sieg-muni { grid-area: sieg-muni; display: flex; flex-direction: column; min-width: 0; }
+.info-col-sieg-comm { grid-area: sieg-comm; display: flex; flex-direction: column; min-width: 0; }
+/* Les cartes sièges remplissent la hauteur de leur cellule */
+.info-col-sieg-muni > article,
+.info-col-sieg-comm > article { flex: 1; display: flex; flex-direction: column; }
+
+/* ─── Alignement rectangle : le dernier card de col-a et col-c absorbe l'espace restant ─── */
+/* col-b est exclu : l'évolution horaire (pas le dernier enfant) est ciblée directement */
 .info-col-a > article:last-child,
 .info-col-c > article:last-child {
   flex: 1;
@@ -142,16 +156,12 @@
   min-height: 0;
 }
 
-/* Col B — Évolution horaire absorbe la hauteur supplémentaire (prioritaire sur Verrouillage) */
-.info-col-b > article.info-card-evolution {
-  flex: 1;
+/* Col B — dernier article (Verrouillage BV) : taille naturelle, contenu centré verticalement */
+.info-col-b > article:last-child {
+  flex: none;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-}
-/* Col B — Verrouillage : hauteur naturelle, ne s'étire PAS */
-.info-col-b > article:last-child {
-  flex: 0 0 auto;
+  justify-content: center;
 }
 
 /* Le contenu extensible dans chaque dernier card */
@@ -163,16 +173,9 @@
   min-height: 0;
 }
 
-/* Col A — Sièges Muni (dernier en T2) : la liste s'étire */
-.info-col-a > article:last-child .sieges-list {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-/* Col B — Verrouillage : tuiles en haut (le bloc ne s'étire plus) */
+/* Col B — Verrouillage : les tuiles ne s'étirent pas (centrage géré par l'article) */
 .info-col-b > article:last-child .bv-tiles {
-  align-content: start;
+  align-content: flex-start;
   min-height: 0;
 }
 
@@ -183,11 +186,28 @@
   overflow-y: auto;
 }
 
-/* Col C — Sièges Comm (dernier en T2) : la liste s'étire */
-.info-col-c > article:last-child .sieges-list {
+/* ─── Col B : évolution horaire s'étire toujours (T1 ET T2) ─── */
+
+/* L'évolution horaire absorbe tout l'espace restant dans col B — T1 ET T2 */
+.info-card-evolution {
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.info-card-evolution .info-evolution {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+}
+/* Le chart s'étire en desktop */
+@media (min-width: 1201px) {
+  .info-card-evolution .info-evo-chart-area {
+    flex: 1;
+    height: auto;
+    min-height: 200px;
+  }
 }
 
 /* ═══ CARTE GÉNÉRIQUE ══════════════════════════════════════════════ */
@@ -199,8 +219,6 @@
 /* Les derniers cards s'étirent — overflow visible pour que flex interne fonctionne */
 .info-col-a > article:last-child,
 .info-col-c > article:last-child { overflow: visible; }
-/* Évolution horaire s'étire aussi (flex:1) */
-.info-col-b > article.info-card-evolution { overflow: visible; }
 .info-card.info-card-evolution { padding: 0; }
 .info-card .card-title {
   font-size: 11px; font-weight: 800; letter-spacing: .07em;
@@ -224,16 +242,15 @@
 .kpi-sub   { font-size: 11px; opacity: .68; margin-top: 2px; }
 
 /* ═══ ÉVOLUTION HORAIRE ════════════════════════════════════════════ */
-/* L'évolution s'étire dans son card */
-.info-evolution { padding: 16px 18px 16px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.info-evolution { padding: 16px 18px 16px; }
 .info-evolution-head {
   display: flex; align-items: baseline; justify-content: space-between;
-  gap: 12px; margin-bottom: 12px; flex-shrink: 0;
+  gap: 12px; margin-bottom: 12px;
 }
 .info-evolution-title { font-size: 14px; font-weight: 800; color: var(--info-accent); }
 .info-evolution-sub   { font-size: 12px; opacity: .6; white-space: nowrap; }
 
-.info-evo-chart-area { position: relative; min-height: 260px; flex: 1; }
+.info-evo-chart-area { position: relative; height: 260px; }
 
 .info-evo-bars {
   position: absolute; inset: 0;
@@ -259,16 +276,24 @@
   position: absolute; left: 0; top: 0;
   width: 100%; height: calc(100% - 44px); pointer-events: none;
 }
-.info-evo-area  { fill: var(--info-accent, #0b3b86); fill-opacity: .06; }
+.info-evo-area  { fill: rgba(0,0,0,.06); }
 .info-evo-line  {
-  fill: none; stroke: var(--info-accent, #0b3b86); stroke-width: 1.4;
+  fill: none; stroke: #111827; stroke-width: 1.2;
   stroke-linecap: round; stroke-linejoin: round;
-  stroke-opacity: .7;
-  filter: none;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.18));
 }
-.info-evo-point {
-  fill: var(--info-accent, #0b3b86); stroke: #fff; stroke-width: .4;
-  filter: none;
+
+/* Points HTML — taille fixe 8px, indépendante de la hauteur du bloc */
+.info-evo-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #111827;
+  border: 1.5px solid rgba(255,255,255,.85);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
 }
 
 /* ═══ VERROUILLAGE BUREAUX ═════════════════════════════════════════ */
@@ -278,7 +303,7 @@
   grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
   gap: 6px;
   margin-bottom: 10px;
-  align-content: start;
+  align-content: start;  /* tuiles restent en haut si bv-tiles s'étire */
 }
 
 .bv-tile {
@@ -513,120 +538,108 @@
   margin-top: 4px;
 }
 
-/* ═══ BLOCS SIÈGES (T2) ═══════════════════════════════════════════ */
+/* ═══ SIÈGES MUNICIPAUX & COMMUNAUTAIRES (T2) ══════════════════════ */
 .info-card-sieges {
   display: flex;
   flex-direction: column;
 }
 
-.sieges-total-banner {
+/* Badge total sièges */
+.sieges-badge {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  background: var(--info-accent);
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--info-accent-soft);
+  border: 1px solid var(--info-accent-mid);
   border-radius: 10px;
-  padding: 10px 14px;
-  margin-bottom: 10px;
 }
-.sieges-total-banner--comm {
-  background: linear-gradient(135deg, var(--info-accent) 0%, #1e40af 100%);
-}
-.sieges-total-nb {
+.sieges-badge-nb {
   font-size: 28px;
   font-weight: 900;
-  color: #fff;
+  color: var(--info-accent);
   line-height: 1;
 }
-.sieges-total-label {
+.sieges-badge-label {
   font-size: 12px;
-  font-weight: 700;
-  color: rgba(255,255,255,.85);
-  text-transform: uppercase;
-  letter-spacing: .04em;
+  opacity: .7;
 }
 
+/* Liste des listes */
 .sieges-list {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 0;
 }
+
 .sieges-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 28px 1fr 36px;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 7px 4px;
-  border-bottom: 1px solid rgba(0,0,0,.06);
+  padding: 8px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,.05);
+  background: #fafafa;
 }
-.sieges-row:last-child { border-bottom: none; }
 .sieges-row--first {
   background: var(--info-accent-soft);
-  border-radius: 8px;
-  padding: 7px 8px;
+  border-color: var(--info-accent-mid);
 }
-.sieges-row-name {
-  font-size: 12px;
+
+.sieges-rank {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--info-accent);
+  color: #fff;
+  font-weight: 900;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sieges-row--first .sieges-rank {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+}
+
+.sieges-main { min-width: 0; }
+.sieges-nom {
+  font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
-  flex: 1;
+  line-height: 1.2;
+  margin-bottom: 4px;
 }
-.sieges-row-detail {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-
-.sieges-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 26px;
-  height: 24px;
-  border-radius: 7px;
-  font-size: 13px;
-  font-weight: 900;
-  padding: 0 6px;
-}
-.sieges-badge--maj {
-  background: var(--info-accent-soft);
-  color: var(--info-accent);
-  border: 1px solid var(--info-accent-mid);
-}
-.sieges-badge--prop {
-  background: #f8fafc;
-  color: #475569;
-  border: 1px solid #e2e8f0;
-}
-.sieges-badge--total {
-  background: var(--info-accent);
-  color: #fff;
-}
-
-.sieges-badge--sm {
-  min-width: 18px;
-  height: 16px;
-  font-size: 9px;
+.sieges-bar-wrap {
+  height: 5px;
+  background: rgba(0,0,0,.08);
   border-radius: 4px;
-  padding: 0 3px;
+  overflow: hidden;
+}
+.sieges-bar {
+  height: 100%;
+  background: var(--info-accent);
+  border-radius: 4px;
+  transition: width 600ms ease;
+  min-width: 3px;
 }
 
-.sieges-legende {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 8px;
-  font-size: 10px;
-  opacity: .72;
-}
-.sieges-legende-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
+.sieges-count {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--info-accent);
+  text-align: right;
+  line-height: 1;
 }
 
 /* ═══ PIED DE PAGE ═════════════════════════════════════════════════ */
@@ -635,87 +648,60 @@
 
 /* ═══ RESPONSIVE ═══════════════════════════════════════════════════ */
 @media (max-width: 1200px) {
+  /* Page sort du breakout — layout normal */
   .info-page { position: static; left: auto; width: 100%; transform: none; padding: 12px; }
-  .info-header { flex-direction: column; }
 
-  /* Titre Informations — Tour X : sur une seule ligne */
-  .info-title-h1 { font-size: 22px; white-space: nowrap; }
+  /* Header : colonne unique */
+  .info-header { flex-direction: column; align-items: stretch; gap: 14px; }
 
-  /* 4 tuiles info header → 2 lignes x 2 colonnes */
-  .info-meta { grid-template-columns: 1fr 1fr; }
+  /* Tour switch : côte à côte, pleine largeur */
+  .info-tour-switch { flex-direction: row; width: 100%; }
+  .info-tour-btn    { flex: 1; }
+  .info-tour-hint   { width: 100%; text-align: center; }
 
-  /* Boutons Tour 1 / Tour 2 : côte à côte toujours */
-  .info-tour-switch {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    justify-content: center;
-    width: 100%;
+  /* Méta-cartes : 2 colonnes, max-width pour éviter débordement */
+  .info-meta { 
+    grid-template-columns: 1fr 1fr; 
+    flex: none; 
+    width: 100%; 
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    align-self: stretch;   /* annule le align-self: flex-start du desktop */
+    /* NE PAS mettre overflow:hidden ici — ça clipe les border-radius des cartes de droite */
   }
-  .info-tour-btn { width: auto; min-width: 140px; flex: 1; max-width: 220px; }
+  /* Contenir le débordement DANS chaque carte, pas dans la grille */
+  .info-meta-item {
+    overflow: hidden;
+    min-width: 0;
+  }
+  /* Compte à rebours : police réduite pour tenir dans une demi-largeur */
+  .countdown-val { font-size: 16px; }
+  .countdown-sep { font-size: 14px; }
+  .countdown-unit { min-width: 20px; }
 
-  /* Grille 3 colonnes → 1 colonne */
+  /* Titre sur une ligne — réduire la taille si besoin */
+  .info-title-h1 { font-size: 26px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Grille 3 colonnes → colonne unique empilée */
   .info-grid { grid-template-columns: 1fr; grid-template-areas: "cola" "colb" "colc"; }
+  /* T2 : colonnes sièges empilées sous les colonnes principales */
+  .info-grid--t2 { grid-template-columns: 1fr; grid-template-areas: "cola" "colb" "colc" "sieg-muni" "sieg-comm"; }
 
-  /* Colonnes empilées : les blocs ne s'étirent plus artificiellement */
-  .info-col-a > article:last-child,
-  .info-col-c > article:last-child {
-    flex: 0 0 auto;
-  }
-  .info-col-b > article.info-card-evolution {
-    flex: 0 0 auto;
-  }
+  /* KPIs participation : 2 × 2 */
+  .kpis { grid-template-columns: 1fr 1fr !important; }
 
-  /* KPIs Participation : forcer 2x2 avec taille contrôlée */
-  .kpis { grid-template-columns: 1fr 1fr; }
-  .kpi-value { font-size: 18px; }
-  .kpi-label { font-size: 10px; }
-  .kpi-sub   { font-size: 10px; }
+  /* Évolution horaire : scroll horizontal pour ne pas écraser les valeurs */
+  .info-card-evolution { overflow-x: auto; }
+  .info-evo-chart-area { min-width: 700px; height: 260px !important; }
 
-  /* Évolution horaire : scroll horizontal pour lisibilité */
-  .info-evo-chart-area {
-    min-height: 220px;
-    height: 220px;
-    flex: none;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-  }
-  .info-evo-bars {
-    position: relative;
-    inset: auto;
-    min-width: 700px;
-    width: 100%;
-    height: 220px;
-    padding-bottom: 44px;
-  }
-  .info-evo-svg {
-    min-width: 700px;
-    width: 100%;
-    height: calc(100% - 44px);
-  }
-
-  /* Courbe + points : réduire taille en responsive */
-  .info-evo-line { stroke-width: 1.4; }
-  .info-evo-point { r: 2.5; }
-
-  /* Barres : pourcentage plus petit */
-  .info-evo-bar-pct { font-size: 9px; }
-  .info-evo-label   { font-size: 10px; }
-  .info-evo-votants { font-size: 9px; }
+  /* Légende évolution : alignée à droite */
+  .info-evolution-head { flex-wrap: wrap; }
+  .info-evolution-sub  { text-align: right; margin-left: auto; }
 }
+
 @media (max-width: 640px) {
-  .info-title-h1 { font-size: 18px; }
-
-  /* Tuiles meta 2x2 conservées */
-  .info-meta { grid-template-columns: 1fr 1fr; }
-  .info-meta-item .value { font-size: 16px; }
-  .info-meta-item .label { font-size: 10px; }
-
-  .info-tour-btn { min-width: 110px; height: 50px; font-size: 14px; }
-  .bv-tile    { width: 56px; }
-  .rank-seats { grid-template-columns: 1fr; }
-
-  /* Courbe + points encore plus fins */
-  .info-evo-line { stroke-width: 1.2; }
-  .info-evo-point { r: 2; }
+  .info-title-h1 { font-size: 20px; }
+  .info-meta     { grid-template-columns: 1fr 1fr; }
+  .bv-tile       { width: 56px; }
 }
